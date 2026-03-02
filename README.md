@@ -161,9 +161,10 @@ make cluster-status          # Check Kubernetes cluster status
 make clean-deployments       # Delete all InferenceServices
 
 # Testing
-make test                    # Run unit tests
-make test-integration        # Run integration tests (requires Ollama)
-make test-e2e                # Run end-to-end tests (requires cluster)
+make test                    # Run all tests (requires DB and Ollama)
+make test-unit               # Run unit tests (no external dependencies)
+make test-db                 # Run database tests (requires PostgreSQL)
+make test-integration        # Run integration tests (requires Ollama and DB)
 
 make clean                   # Remove generated files
 ```

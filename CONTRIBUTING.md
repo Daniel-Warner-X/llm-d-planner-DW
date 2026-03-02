@@ -259,27 +259,25 @@ Signed-off-by: Your Name <your.email@example.com>
 
 ### Test Coverage
 
-- **Unit tests**: Required for all new functionality
+- **Unit tests**: Required for all new functionality (no external dependencies)
   - Located in `tests/`
   - Run with `make test-unit`
-- **Integration tests**: Required for API endpoints and workflows
-  - Run with `make test-integration`
-- **End-to-end tests**: For critical user flows (optional for most PRs)
-  - Run with `make test-e2e`
+- **Database tests**: For PostgreSQL benchmark queries
+  - Uses isolated `neuralnav_test` database with static fixture data
+  - Run with `make test-db` (requires PostgreSQL)
+- **Integration tests**: For end-to-end recommendation workflows
+  - Run with `make test-integration` (requires Ollama and PostgreSQL)
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (requires DB and Ollama)
 make test
 
 # Run specific test categories
 make test-unit
+make test-db
 make test-integration
-make test-e2e
-
-# Run tests in watch mode during development
-make test-watch
 
 # Run linters
 make lint
