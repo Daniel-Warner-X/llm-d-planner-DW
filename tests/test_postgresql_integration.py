@@ -1,48 +1,41 @@
-"""Unit and integration tests for PostgreSQL migration.
+"""Tests for PostgreSQL benchmark repository and SLO templates.
+
+Database tests use a dedicated neuralnav_test database with static fixture
+data (see conftest.py), so they work regardless of what production data
+is loaded.
 
 Tests cover:
 1. BenchmarkRepository - PostgreSQL connection and queries
 2. Traffic profile exact matching
 3. p95/ITL metric usage
 4. SLO filtering and compliance checking
+5. SLO templates - JSON-based (no database needed)
 """
 
 import pytest
-import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-import sys
-from pathlib import Path
 
 from neuralnav.knowledge_base.benchmarks import BenchmarkRepository, BenchmarkData
 from neuralnav.knowledge_base.slo_templates import SLOTemplateRepository
-from neuralnav.shared.schemas import SLOTargets
 
 
-# Test database configuration
-TEST_DB_URL = "postgresql://postgres:neuralnav@localhost:5432/neuralnav"
-
-
+@pytest.mark.database
 class TestBenchmarkRepository:
     """Tests for BenchmarkRepository with PostgreSQL backend."""
 
     @pytest.fixture
-    def repo(self):
-        """Create a BenchmarkRepository instance."""
-        return BenchmarkRepository(database_url=TEST_DB_URL)
+    def repo(self, test_db_url):
+        """Create a BenchmarkRepository connected to the test database."""
+        return BenchmarkRepository(database_url=test_db_url)
 
     def test_connection(self, repo):
         """Test that we can connect to PostgreSQL."""
-        # Repository initializes successfully means connection works
-        # The _test_connection() method is called in __init__
         assert repo is not None
         assert repo.database_url is not None
 
     def test_get_benchmark_exact_match(self, repo):
         """Test retrieving a benchmark with exact traffic profile match."""
-        # Query for a known configuration
-        # Using meta-llama/Llama-3.1-8B-Instruct, H100, 1 GPU, traffic (512, 256)
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
             prompt_tokens=512,
@@ -50,7 +43,7 @@ class TestBenchmarkRepository:
         )
 
         assert benchmark is not None
-        assert benchmark.model_hf_repo == "meta-llama/Llama-3.1-8B-Instruct"
+        assert benchmark.model_hf_repo == "meta-llama/llama-3.1-8b-instruct"
         assert benchmark.hardware == "H100"
         assert benchmark.hardware_count == 1
         assert benchmark.prompt_tokens == 512
@@ -71,7 +64,7 @@ class TestBenchmarkRepository:
     def test_benchmark_has_p95_metrics(self, repo):
         """Test that benchmarks have p95 metrics (not p90)."""
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
             prompt_tokens=512,
@@ -79,12 +72,10 @@ class TestBenchmarkRepository:
         )
 
         assert benchmark is not None
-        # Check for p95 fields
         assert hasattr(benchmark, 'ttft_p95')
-        assert hasattr(benchmark, 'itl_p95')  # ITL, not TPOT
+        assert hasattr(benchmark, 'itl_p95')
         assert hasattr(benchmark, 'e2e_p95')
 
-        # Values should be positive numbers
         assert benchmark.ttft_p95 > 0
         assert benchmark.itl_p95 > 0
         assert benchmark.e2e_p95 > 0
@@ -96,7 +87,7 @@ class TestBenchmarkRepository:
         assert len(profiles) > 0
         assert isinstance(profiles, list)
 
-        # Should include the 4 GuideLLM profiles
+        # Test fixture includes the 4 GuideLLM profiles
         expected_profiles = [
             (512, 256),
             (1024, 1024),
@@ -120,7 +111,6 @@ class TestBenchmarkRepository:
 
         assert len(configs) > 0
 
-        # All configs should meet SLO
         for config in configs:
             assert config.ttft_p95 <= 200
             assert config.itl_p95 <= 50
@@ -131,13 +121,12 @@ class TestBenchmarkRepository:
         configs = repo.find_configurations_meeting_slo(
             prompt_tokens=512,
             output_tokens=256,
-            ttft_p95_max_ms=10,  # Very tight
+            ttft_p95_max_ms=10,
             itl_p95_max_ms=5,
             e2e_p95_max_ms=100,
             min_qps=0
         )
 
-        # Should have no configurations meeting such strict SLO
         assert len(configs) == 0
 
     def test_get_available_models(self, repo):
@@ -147,13 +136,12 @@ class TestBenchmarkRepository:
         assert len(models) > 0
         assert isinstance(models, list)
 
-        # Should include Llama-3.1-8B-Instruct
-        assert "meta-llama/Llama-3.1-8B-Instruct" in models
+        assert "meta-llama/llama-3.1-8b-instruct" in models
 
     def test_benchmark_data_fields(self, repo):
         """Test that BenchmarkData has all required fields."""
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
             prompt_tokens=512,
@@ -162,12 +150,11 @@ class TestBenchmarkRepository:
 
         assert benchmark is not None
 
-        # Check all required fields
         required_fields = [
             'model_hf_repo', 'hardware', 'hardware_count',
             'prompt_tokens', 'output_tokens',
             'ttft_p95', 'itl_p95', 'e2e_p95',
-            'requests_per_second'  # Note: it's requests_per_second, not throughput_qps
+            'requests_per_second'
         ]
 
         for field in required_fields:
@@ -207,7 +194,6 @@ class TestSLOTemplates:
         assert template is not None
         assert hasattr(template, 'experience_class')
 
-        # Experience class should be valid
         valid_classes = ['instant', 'conversational', 'interactive', 'deferred', 'batch']
         assert template.experience_class in valid_classes
 
@@ -217,12 +203,10 @@ class TestSLOTemplates:
 
         assert template is not None
 
-        # Check for p95 fields (attributes on the object)
         assert hasattr(template, 'ttft_p95_target_ms')
-        assert hasattr(template, 'itl_p95_target_ms')  # ITL, not tpot
+        assert hasattr(template, 'itl_p95_target_ms')
         assert hasattr(template, 'e2e_p95_target_ms')
 
-        # Values should be positive
         assert template.ttft_p95_target_ms > 0
         assert template.itl_p95_target_ms > 0
         assert template.e2e_p95_target_ms > 0
@@ -234,7 +218,7 @@ class TestSLOTemplates:
             'code_completion',
             'code_generation_detailed',
             'translation',
-            'content_generation',  # Note: It's "content_generation" not "content_creation"
+            'content_generation',
             'summarization_short',
             'document_analysis_rag',
             'long_document_summarization',
@@ -261,23 +245,23 @@ class TestSLOTemplates:
         for template in templates.values():
             actual_profiles.add((template.prompt_tokens, template.output_tokens))
 
-        # All templates should use one of the 4 GuideLLM profiles
         for profile in actual_profiles:
             assert profile in expected_profiles, f"Unexpected profile: {profile}"
 
 
+@pytest.mark.database
 class TestTrafficProfileMatching:
     """Tests for traffic profile exact matching logic."""
 
     @pytest.fixture
-    def repo(self):
-        """Create a BenchmarkRepository instance."""
-        return BenchmarkRepository(database_url=TEST_DB_URL)
+    def repo(self, test_db_url):
+        """Create a BenchmarkRepository connected to the test database."""
+        return BenchmarkRepository(database_url=test_db_url)
 
     def test_exact_match_512_256(self, repo):
         """Test exact match for (512, 256) traffic profile."""
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
             prompt_tokens=512,
@@ -291,45 +275,43 @@ class TestTrafficProfileMatching:
     def test_exact_match_1024_1024(self, repo):
         """Test exact match for (1024, 1024) traffic profile."""
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
             prompt_tokens=1024,
             output_tokens=1024
         )
 
-        # May or may not exist depending on data
-        if benchmark is not None:
-            assert benchmark.prompt_tokens == 1024
-            assert benchmark.output_tokens == 1024
+        assert benchmark is not None
+        assert benchmark.prompt_tokens == 1024
+        assert benchmark.output_tokens == 1024
 
     def test_no_fuzzy_matching(self, repo):
         """Test that fuzzy matching is NOT used (exact match only)."""
-        # Query for tokens that don't exactly match any profile
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
-            prompt_tokens=500,  # Close to 512, but not exact
-            output_tokens=250   # Close to 256, but not exact
+            prompt_tokens=500,
+            output_tokens=250
         )
 
-        # Should return None (no fuzzy matching)
         assert benchmark is None
 
 
+@pytest.mark.database
 class TestE2ELatencyCalculation:
     """Tests for E2E latency (pre-calculated vs dynamic)."""
 
     @pytest.fixture
-    def repo(self):
-        """Create a BenchmarkRepository instance."""
-        return BenchmarkRepository(database_url=TEST_DB_URL)
+    def repo(self, test_db_url):
+        """Create a BenchmarkRepository connected to the test database."""
+        return BenchmarkRepository(database_url=test_db_url)
 
     def test_e2e_precalculated_in_benchmarks(self, repo):
         """Test that E2E latency is pre-calculated in benchmark data."""
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
             prompt_tokens=512,
@@ -344,9 +326,9 @@ class TestE2ELatencyCalculation:
         assert benchmark.e2e_p95 > benchmark.ttft_p95
 
     def test_e2e_vs_ttft_itl_relationship(self, repo):
-        """Test that E2E is consistent with TTFT + (tokens × ITL)."""
+        """Test that E2E is consistent with TTFT + (tokens x ITL)."""
         benchmark = repo.get_benchmark(
-            model_hf_repo="meta-llama/Llama-3.1-8B-Instruct",
+            model_hf_repo="meta-llama/llama-3.1-8b-instruct",
             hardware="H100",
             hardware_count=1,
             prompt_tokens=512,
@@ -356,14 +338,8 @@ class TestE2ELatencyCalculation:
         assert benchmark is not None
 
         # Rough check: E2E should be approximately TTFT + (output_tokens * ITL)
-        # Allow for overhead/batching effects
         estimated_e2e = benchmark.ttft_p95 + (benchmark.output_tokens * benchmark.itl_p95)
 
         # E2E should be within reasonable range (allow 50% variance for batching effects)
         assert benchmark.e2e_p95 < estimated_e2e * 1.5
         assert benchmark.e2e_p95 > estimated_e2e * 0.5
-
-
-if __name__ == "__main__":
-    # Run tests with pytest
-    pytest.main([__file__, "-v", "-s"])

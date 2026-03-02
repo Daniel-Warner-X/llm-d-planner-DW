@@ -81,9 +81,9 @@
         "throughput_priority": "medium"
       }
     },
-    "content_creation": {
-      "use_case": "Content Creation",
-      "description": "Content creation, marketing copy, blog posts",
+    "content_generation": {
+      "use_case": "Content Generation",
+      "description": "Content generation, marketing copy, blog posts",
       "traffic_profile": {
         "prompt_tokens": 512,
         "output_tokens": 256

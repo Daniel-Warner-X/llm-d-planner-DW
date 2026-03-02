@@ -183,7 +183,7 @@ ollama serve
 **Verify:**
 ```bash
 curl http://localhost:11434/api/tags
-ollama list  # Should show llama3.1:8b
+ollama list  # Should show qwen2.5:7b
 ```
 
 ### 2. FastAPI Backend
@@ -371,44 +371,34 @@ Test individual components without external dependencies:
 make test-unit
 ```
 
-**Run specific test:**
+### Database Tests
+
+Test PostgreSQL benchmark queries using an isolated `neuralnav_test` database
+with static fixture data (your production database is never touched):
+
 ```bash
-source venv/bin/activate
-pytest tests/test_model_evaluator.py -v
+make test-db
 ```
+
+Requires PostgreSQL running (`make db-start`).
 
 ### Integration Tests
 
-Test components with Ollama integration:
+Test the full recommendation workflow including LLM-powered intent extraction:
 
 ```bash
 make test-integration
 ```
 
-Requires Ollama running with `llama3.1:8b` model.
+Requires Ollama running with `qwen2.5:7b` model and PostgreSQL.
 
-### End-to-End Tests
-
-Test full workflow including Kubernetes deployment:
+### Run All Tests
 
 ```bash
-make test-e2e
+make test
 ```
 
-Requires:
-- Ollama running
-- KIND cluster running
-- Backend and UI services
-
-### Workflow Test
-
-Test the complete recommendation workflow:
-
-```bash
-make test-workflow
-```
-
-This runs `tests/test_recommendation_workflow.py` which tests all 3 demo scenarios.
+Runs all three tiers: unit, database, and integration.
 
 ## Debugging
 
@@ -759,10 +749,10 @@ uv sync  # Same command — all deps are in pyproject.toml
 
 ### Manual Ollama Model Pull
 
-The POC uses `llama3.1:8b` for intent extraction:
+The POC uses `qwen2.5:7b` for intent extraction:
 
 ```bash
-ollama pull llama3.1:8b
+ollama pull qwen2.5:7b
 ```
 
 **Alternative models** (if needed):
@@ -773,7 +763,7 @@ ollama pull llama3.1:8b
 
 ```bash
 # Test Ollama is working
-ollama list  # Should show llama3.1:8b
+ollama list  # Should show qwen2.5:7b
 ```
 
 ## Running Services Manually
@@ -797,7 +787,8 @@ Then open http://localhost:8501 in your browser.
 
 ### Option 2: Test End-to-End Workflow
 
-Test the complete recommendation workflow with demo scenarios:
+Test the complete recommendation workflow with demo scenarios.
+Requires Ollama running with `qwen2.5:7b` and PostgreSQL with benchmark data:
 
 ```bash
 uv run pytest tests/test_recommendation_workflow.py -v
@@ -1019,6 +1010,8 @@ Then deploy to a GPU-enabled cluster with:
 ## Testing Details
 
 ### Quick Tests
+
+Requires Ollama running with `qwen2.5:7b` and PostgreSQL with benchmark data:
 
 ```bash
 # Test end-to-end workflow

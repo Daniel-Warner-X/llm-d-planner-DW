@@ -75,6 +75,7 @@ Be intelligent about inference:
 - "document Q&A" or "knowledge base" or "document search" → use_case: document_analysis_rag
 - "RAG" or "retrieval" → use_case: document_analysis_rag
 - "chatbot" or "customer service" or "conversational" → use_case: chatbot_conversational
+- "content" or "marketing" or "blog" or "content generation" → use_case: content_generation
 - "summarize document" or "summarization" → use_case: summarization_short or long_document_summarization
 
 GPU extraction examples (canonical names: L4, A100-40, A100-80, H100, H200, B200):

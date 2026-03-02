@@ -113,8 +113,9 @@ known-first-party = ["neuralnav"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [tool.pytest.ini_options]
-# Register custom pytest marks to avoid warnings
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "session"
 markers = [
-    "integration: marks tests as integration tests (deselected by default, requires backend running)",
-    "e2e: marks tests as end-to-end tests (deselected by default, requires cluster)",
+    "database: marks tests that require a running PostgreSQL database with benchmark data",
+    "integration: marks tests as integration tests (requires Ollama and database)",
 ]

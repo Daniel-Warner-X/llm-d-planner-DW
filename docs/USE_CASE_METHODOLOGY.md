@@ -91,8 +91,8 @@ From the Artificial Analysis Intelligence Index Evaluation Suite:
 
 ---
 
-### 5. content_creation
-**Description**: Content creation, marketing copy (medium prompts, medium responses)
+### 5. content_generation
+**Description**: Content generation, marketing copy (medium prompts, medium responses)
 
 **Weights**:
 - τ²-Bench: 45% (Creative agentic workflow)
