@@ -51,6 +51,7 @@ KIND_CLUSTER_NAME ?= neuralnav
 PGDUMP_INPUT ?= data/benchmarks/performance/integ-oct-29.sql
 PGDUMP_OUTPUT ?= data/benchmarks/performance/benchmarks_GuideLLM.json
 
+SRC_DIR := src
 UI_DIR := ui
 SIMULATOR_DIR := simulator
 
@@ -415,11 +416,6 @@ db-init: db-start ## Initialize PostgreSQL schema
 	@$(CONTAINER_TOOL) exec -i neuralnav-postgres psql -U postgres -d neuralnav < scripts/schema.sql
 	@printf "$(GREEN)✓ Schema initialized$(NC)\n"
 
-db-load-synthetic: db-start ## Load synthetic benchmark data (appends)
-	@printf "$(BLUE)Loading synthetic benchmark data...$(NC)\n"
-	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_synthetic.json
-	@printf "$(GREEN)✓ Synthetic data loaded$(NC)\n"
-
 db-load-blis: db-start ## Load BLIS benchmark data (appends)
 	@printf "$(BLUE)Loading BLIS benchmark data...$(NC)\n"
 	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_BLIS.json
@@ -460,7 +456,7 @@ db-shell: ## Open PostgreSQL shell
 db-query-traffic: ## Query unique traffic patterns from database
 	@printf "$(BLUE)Querying unique traffic patterns...$(NC)\n"
 	@$(CONTAINER_TOOL) exec -i neuralnav-postgres psql -U postgres -d neuralnav -c \
-		"SELECT DISTINCT mean_input_tokens, mean_output_tokens, COUNT(*) as num_benchmarks \
+		"SELECT prompt_tokens, output_tokens, COUNT(*) as num_benchmarks \
 		FROM exported_summaries \
 		GROUP BY prompt_tokens, output_tokens \
 		ORDER BY prompt_tokens, output_tokens;"
@@ -483,35 +479,35 @@ test: test-unit ## Run all tests
 
 test-unit: ## Run unit tests
 	@printf "$(BLUE)Running unit tests...$(NC)\n"
-	cd $(BACKEND_DIR) && uv run pytest ../tests/ -v -m "not integration and not e2e"
+	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m "not integration and not e2e"
 
 test-integration: setup-ollama ## Run integration tests (requires Ollama)
 	@printf "$(BLUE)Running integration tests...$(NC)\n"
-	cd $(BACKEND_DIR) && uv run pytest ../tests/ -v -m integration
+	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m integration
 
 test-e2e: ## Run end-to-end tests (requires cluster)
 	@printf "$(BLUE)Running end-to-end tests...$(NC)\n"
 	@kubectl cluster-info > /dev/null 2>&1 || (printf "$(RED)✗ Kubernetes cluster not accessible$(NC). Run: make cluster-start\n" && exit 1)
-	cd $(BACKEND_DIR) && uv run pytest ../tests/ -v -m e2e
+	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m e2e
 
 test-workflow: setup-ollama ## Run workflow integration test
 	@printf "$(BLUE)Running workflow test...$(NC)\n"
-	cd $(BACKEND_DIR) && uv run $(PYTHON) test_workflow.py
+	cd $(SRC_DIR) && uv run $(PYTHON) test_workflow.py
 
 test-watch: ## Run tests in watch mode
 	@printf "$(BLUE)Running tests in watch mode...$(NC)\n"
-	cd $(BACKEND_DIR) && uv run pytest-watch
+	cd $(SRC_DIR) && uv run pytest-watch
 
 ##@ Code Quality
 
 lint: ## Run linters
 	@printf "$(BLUE)Running linters...$(NC)\n"
-	@uv run ruff check $(BACKEND_DIR)/src/ $(UI_DIR)/*.py || printf "$(YELLOW)ruff not installed, skipping$(NC)\n"
+	@uv run ruff check $(SRC_DIR)/ $(UI_DIR)/ || printf "$(YELLOW)ruff not installed, skipping$(NC)\n"
 	@printf "$(GREEN)✓ Linting complete$(NC)\n"
 
 format: ## Auto-format code
 	@printf "$(BLUE)Formatting code...$(NC)\n"
-	@uv run ruff format $(BACKEND_DIR)/ $(UI_DIR)/ || printf "$(YELLOW)ruff not installed, skipping$(NC)\n"
+	@uv run ruff format $(SRC_DIR)/ $(UI_DIR)/ || printf "$(YELLOW)ruff not installed, skipping$(NC)\n"
 	@printf "$(GREEN)✓ Formatting complete$(NC)\n"
 
 ##@ Cleanup
@@ -549,6 +545,6 @@ info: ## Show configuration and platform info
 	@printf "  KIND Cluster: $(KIND_CLUSTER_NAME)\n"
 	@printf "\n"
 	@printf "$(BLUE)Paths:$(NC)\n"
-	@printf "  Backend: $(BACKEND_DIR)\n"
+	@printf "  Source: $(SRC_DIR)\n"
 	@printf "  UI: $(UI_DIR)\n"
 	@printf "  Simulator: $(SIMULATOR_DIR)\n"
