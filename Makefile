@@ -41,6 +41,10 @@ CONTAINER_TOOL ?= $(shell \
 # Configuration
 REGISTRY ?= quay.io
 REGISTRY_ORG ?= neuralnav
+BACKEND_IMAGE ?= neuralnav-backend
+BACKEND_TAG ?= latest
+BACKEND_FULL_IMAGE := $(REGISTRY)/$(REGISTRY_ORG)/$(BACKEND_IMAGE):$(BACKEND_TAG)
+
 SIMULATOR_IMAGE ?= vllm-simulator
 SIMULATOR_TAG ?= latest
 SIMULATOR_FULL_IMAGE := $(REGISTRY)/$(REGISTRY_ORG)/$(SIMULATOR_IMAGE):$(SIMULATOR_TAG)
@@ -251,6 +255,25 @@ open-backend: ## Open backend API docs in browser
 	@$(OPEN_CMD) http://localhost:8000/docs
 
 ##@ Docker & Simulator
+
+build-backend: ## Build backend Docker image
+	@printf "$(BLUE)Building backend image...$(NC)\n"
+	$(CONTAINER_TOOL) build -f Dockerfile -t $(BACKEND_IMAGE):$(BACKEND_TAG) -t $(BACKEND_FULL_IMAGE) .
+	@printf "$(GREEN)✓ Backend image built:$(NC)\n"
+	@printf "  - $(BACKEND_IMAGE):$(BACKEND_TAG)\n"
+	@printf "  - $(BACKEND_FULL_IMAGE)\n"
+
+push-backend: build-backend ## Push backend image to Quay.io
+	@printf "$(BLUE)Pushing backend image to $(BACKEND_FULL_IMAGE)...$(NC)\n"
+	@if ! $(CONTAINER_TOOL) login quay.io --get-login > /dev/null 2>&1; then \
+		printf "$(YELLOW)Not logged in to Quay.io. Please login:$(NC)\n"; \
+		$(CONTAINER_TOOL) login quay.io || (printf "$(RED)✗ Login failed$(NC)\n" && exit 1); \
+	else \
+		printf "$(GREEN)✓ Already logged in to Quay.io$(NC)\n"; \
+	fi
+	@printf "$(BLUE)Pushing image...$(NC)\n"
+	$(CONTAINER_TOOL) push $(BACKEND_FULL_IMAGE)
+	@printf "$(GREEN)✓ Image pushed to $(BACKEND_FULL_IMAGE)$(NC)\n"
 
 build-simulator: ## Build vLLM simulator Docker image
 	@printf "$(BLUE)Building simulator image...$(NC)\n"
@@ -548,6 +571,7 @@ info: ## Show configuration and platform info
 	@printf "$(BLUE)Configuration:$(NC)\n"
 	@printf "  Registry: $(REGISTRY)\n"
 	@printf "  Org: $(REGISTRY_ORG)\n"
+	@printf "  Backend Image: $(BACKEND_FULL_IMAGE)\n"
 	@printf "  Simulator Image: $(SIMULATOR_FULL_IMAGE)\n"
 	@printf "  Ollama Model: $(OLLAMA_MODEL)\n"
 	@printf "  KIND Cluster: $(KIND_CLUSTER_NAME)\n"
