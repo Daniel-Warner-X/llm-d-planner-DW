@@ -144,16 +144,24 @@ class DeploymentGenerator:
         max_replicas = gpu_config.replicas * 2
 
         # Determine max model length based on use case
+        # Keys must match DeploymentIntent.use_case canonical values
         max_model_len_map = {
-            "chatbot": 4096,
-            "customer_service": 4096,
-            "code_generation": 8192,
-            "summarization": 8192,
-            "content_creation": 8192,
-            "qa_retrieval": 4096,
-            "batch_analytics": 16384,
+            "chatbot_conversational": 4096,
+            "code_completion": 4096,
+            "code_generation_detailed": 8192,
+            "translation": 4096,
+            "content_generation": 8192,
+            "summarization_short": 8192,
+            "document_analysis_rag": 8192,
+            "long_document_summarization": 16384,
+            "research_legal_analysis": 16384,
         }
         max_model_len = max_model_len_map.get(recommendation.intent.use_case, 4096)
+        if recommendation.intent.use_case not in max_model_len_map:
+            logger.warning(
+                f"Unknown use_case '{recommendation.intent.use_case}' for max_model_len, "
+                f"falling back to 4096"
+            )
 
         # Calculate max_num_seqs based on expected QPS and latency
         # Rule of thumb: concurrent requests = QPS × avg_latency_seconds

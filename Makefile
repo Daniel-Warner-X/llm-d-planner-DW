@@ -505,29 +505,20 @@ db-reset: db-remove db-init ## Reset PostgreSQL (remove and reinitialize)
 
 ##@ Testing
 
-test: test-unit ## Run all tests
+test: test-unit test-db test-integration ## Run all tests (requires DB and Ollama)
 	@printf "$(GREEN)✓ All tests passed$(NC)\n"
 
-test-unit: ## Run unit tests
+test-unit: ## Run unit tests (no DB or Ollama required)
 	@printf "$(BLUE)Running unit tests...$(NC)\n"
-	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m "not integration and not e2e"
+	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m "not database and not integration"
 
-test-integration: setup-ollama ## Run integration tests (requires Ollama)
+test-db: ## Run database tests (requires PostgreSQL with benchmark data)
+	@printf "$(BLUE)Running database tests...$(NC)\n"
+	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m database
+
+test-integration: setup-ollama ## Run integration tests (requires Ollama and DB)
 	@printf "$(BLUE)Running integration tests...$(NC)\n"
 	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m integration
-
-test-e2e: ## Run end-to-end tests (requires cluster)
-	@printf "$(BLUE)Running end-to-end tests...$(NC)\n"
-	@kubectl cluster-info > /dev/null 2>&1 || (printf "$(RED)✗ Kubernetes cluster not accessible$(NC). Run: make cluster-start\n" && exit 1)
-	cd $(SRC_DIR) && uv run pytest ../tests/ -v -m e2e
-
-test-workflow: setup-ollama ## Run workflow integration test
-	@printf "$(BLUE)Running workflow test...$(NC)\n"
-	cd $(SRC_DIR) && uv run $(PYTHON) test_workflow.py
-
-test-watch: ## Run tests in watch mode
-	@printf "$(BLUE)Running tests in watch mode...$(NC)\n"
-	cd $(SRC_DIR) && uv run pytest-watch
 
 ##@ Code Quality
 

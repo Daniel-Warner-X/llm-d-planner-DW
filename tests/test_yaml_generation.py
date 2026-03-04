@@ -7,9 +7,7 @@ This script tests the complete workflow:
 4. Fetch mock deployment status
 """
 
-import sys
 import logging
-from pathlib import Path
 
 from neuralnav.shared.schemas import (
     DeploymentIntent,
@@ -19,7 +17,7 @@ from neuralnav.shared.schemas import (
     DeploymentRecommendation
 )
 from neuralnav.configuration.generator import DeploymentGenerator
-from neuralnav.configuration.validator import YAMLValidator, ValidationError
+from neuralnav.configuration.validator import YAMLValidator
 
 # Configure logging
 logging.basicConfig(
@@ -101,72 +99,13 @@ def test_yaml_generation():
     logger.info("\n[2/4] Generating deployment YAML files...")
     generator = DeploymentGenerator()
 
-    try:
-        result = generator.generate_all(recommendation, namespace="default")
-        logger.info(f"✓ Deployment ID: {result['deployment_id']}")
-        logger.info(f"✓ Namespace: {result['namespace']}")
-        logger.info("✓ Generated files:")
-        for config_type, file_path in result['files'].items():
-            logger.info(f"  - {config_type}: {file_path}")
-    except Exception as e:
-        logger.error(f"✗ YAML generation failed: {e}")
-        return False
+    result = generator.generate_all(recommendation, namespace="default")
+    assert result is not None
+    assert 'deployment_id' in result
+    assert 'files' in result
 
     # Step 3: Validate generated YAMLs
-    logger.info("\n[3/4] Validating generated YAML files...")
     validator = YAMLValidator()
-
-    try:
-        validation_results = validator.validate_all(result['files'])
-        logger.info("✓ All YAML files validated successfully:")
-        for config_type, valid in validation_results.items():
-            logger.info(f"  - {config_type}: {'✓ VALID' if valid else '✗ INVALID'}")
-    except ValidationError as e:
-        logger.error(f"✗ Validation failed: {e}")
-        return False
-
-    # Step 4: Display sample YAML content
-    logger.info("\n[4/4] Sample YAML content (KServe InferenceService):")
-    logger.info("-" * 80)
-
-    inferenceservice_path = result['files'].get('inferenceservice')
-    if inferenceservice_path:
-        try:
-            with open(inferenceservice_path, 'r') as f:
-                content = f.read()
-                # Show first 40 lines
-                lines = content.split('\n')[:40]
-                for line in lines:
-                    logger.info(line)
-                if len(content.split('\n')) > 40:
-                    logger.info("... (truncated)")
-        except Exception as e:
-            logger.warning(f"Could not read file: {e}")
-
-    logger.info("-" * 80)
-
-    # Summary
-    logger.info("\n" + "=" * 80)
-    logger.info("SPRINT 4 TEST RESULTS")
-    logger.info("=" * 80)
-    logger.info("✓ Recommendation generation: PASSED")
-    logger.info("✓ YAML generation: PASSED")
-    logger.info("✓ YAML validation: PASSED")
-    logger.info("✓ Files written to: generated_configs/")
-    logger.info("=" * 80)
-    logger.info("\nSprint 4 implementation complete! 🎉")
-    logger.info("\nNext steps:")
-    logger.info("1. Start the FastAPI backend: ./run_api.sh")
-    logger.info("2. Start the Streamlit UI: ./run_ui.sh")
-    logger.info("3. Test the full workflow in the UI:")
-    logger.info("   - Get a recommendation")
-    logger.info("   - Click 'Generate Deployment YAML' on the Cost tab")
-    logger.info("   - View the Monitoring tab to see simulated observability")
-    logger.info("=" * 80)
-
-    return True
-
-
-if __name__ == "__main__":
-    success = test_yaml_generation()
-    sys.exit(0 if success else 1)
+    validation_results = validator.validate_all(result['files'])
+    for config_type, valid in validation_results.items():
+        assert valid, f"YAML validation failed for {config_type}"
