@@ -105,4 +105,3 @@ Examples:
 {INTENT_EXTRACTION_SCHEMA}
 """
     return prompt
-
