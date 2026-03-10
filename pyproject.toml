@@ -131,3 +131,8 @@ markers = [
     "integration: marks tests as integration tests (requires Ollama and database)",
     "unit: marks tests as unit tests (no external dependencies)",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]
