@@ -54,6 +54,7 @@ class GPUType:
     def __init__(self, data: dict):
         self.gpu_type = data["gpu_type"]
         self.aliases = data.get("aliases", [data["gpu_type"]])  # Default to primary name
+        self.node_selector_label = data.get("node_selector_label", self.aliases[0])
         self.memory_gb = data["memory_gb"]
         self.compute_capability = data["compute_capability"]
         self.typical_use_cases = data["typical_use_cases"]
@@ -88,6 +89,7 @@ class GPUType:
         return {
             "gpu_type": self.gpu_type,
             "aliases": self.aliases,
+            "node_selector_label": self.node_selector_label,
             "memory_gb": self.memory_gb,
             "compute_capability": self.compute_capability,
             "typical_use_cases": self.typical_use_cases,

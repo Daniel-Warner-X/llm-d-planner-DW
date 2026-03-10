@@ -1280,6 +1280,7 @@
     {
       "gpu_type": "L4",
       "aliases": ["NVIDIA-L4", "L4"],
+      "node_selector_label": "NVIDIA-L4",
       "memory_gb": 24,
       "compute_capability": "8.9",
       "typical_use_cases": ["inference"],
@@ -1293,6 +1294,7 @@
     {
       "gpu_type": "A10G",
       "aliases": ["NVIDIA-A10G", "A10G"],
+      "node_selector_label": "NVIDIA-A10G",
       "memory_gb": 24,
       "compute_capability": "8.6",
       "typical_use_cases": ["inference"],
@@ -1306,6 +1308,7 @@
     {
       "gpu_type": "A100-40",
       "aliases": ["NVIDIA-A100-40GB", "A100-40", "A100-40GB"],
+      "node_selector_label": "NVIDIA-A100-SXM4-40GB",
       "memory_gb": 40,
       "compute_capability": "8.0",
       "typical_use_cases": ["inference", "training"],
@@ -1319,6 +1322,7 @@
     {
       "gpu_type": "A100-80",
       "aliases": ["NVIDIA-A100-80GB", "A100-80", "A100-80GB"],
+      "node_selector_label": "NVIDIA-A100-SXM4-80GB",
       "memory_gb": 80,
       "compute_capability": "8.0",
       "typical_use_cases": ["inference", "training"],
@@ -1332,6 +1336,7 @@
     {
       "gpu_type": "H100",
       "aliases": ["NVIDIA-H100", "H100", "H100-80GB"],
+      "node_selector_label": "NVIDIA-H100-80GB-HBM3",
       "memory_gb": 80,
       "compute_capability": "9.0",
       "typical_use_cases": ["inference", "training"],
@@ -1345,6 +1350,7 @@
     {
       "gpu_type": "H200",
       "aliases": ["NVIDIA-H200", "H200", "H200-141GB"],
+      "node_selector_label": "NVIDIA-H200-141GB-HBM3",
       "memory_gb": 141,
       "compute_capability": "9.0",
       "typical_use_cases": ["inference", "training"],
@@ -1358,6 +1364,7 @@
     {
       "gpu_type": "B200",
       "aliases": ["NVIDIA-B200", "B200"],
+      "node_selector_label": "NVIDIA-B200",
       "memory_gb": 192,
       "compute_capability": "10.0",
       "typical_use_cases": ["inference", "training"],
@@ -1371,6 +1378,7 @@
     {
       "gpu_type": "MI300X",
       "aliases": ["AMD-MI300X", "MI300X", "AMD-Instinct-MI300X"],
+      "node_selector_label": "AMD-Instinct-MI300X",
       "memory_gb": 192,
       "compute_capability": "N/A",
       "typical_use_cases": ["inference", "training"],

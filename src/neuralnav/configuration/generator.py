@@ -21,7 +21,7 @@ class DeploymentGenerator:
     """Generate deployment configurations from recommendations."""
 
     # vLLM version to use
-    VLLM_VERSION = "v0.6.2"
+    VLLM_VERSION = "latest"
 
     def __init__(self, output_dir: str | None = None, simulator_mode: bool = False):
         """
@@ -122,9 +122,15 @@ class DeploymentGenerator:
 
         assert gpu_config is not None, "gpu_config is required for template context"
 
-        # Calculate GPU hourly rate from ModelCatalog
+        # Look up GPU info from ModelCatalog
         gpu_info = self._catalog.get_gpu_type(gpu_config.gpu_type)
-        gpu_hourly_rate = gpu_info.cost_per_hour_usd if gpu_info else 1.0
+        if gpu_info is None:
+            raise ValueError(
+                f"Unknown GPU type '{gpu_config.gpu_type}'. "
+                f"Add it to the GPU catalog in data/configuration/model_catalog.json."
+            )
+        gpu_hourly_rate = gpu_info.cost_per_hour_usd
+        gpu_node_selector_label = gpu_info.node_selector_label
 
         # Determine resource requests based on GPU type
         gpu_type = gpu_config.gpu_type
@@ -187,6 +193,7 @@ class DeploymentGenerator:
             "simulator_mode": self.simulator_mode,
             # GPU configuration
             "gpu_type": gpu_config.gpu_type,
+            "gpu_node_selector_label": gpu_node_selector_label,
             "gpu_count": gpu_config.gpu_count,
             "tensor_parallel": gpu_config.tensor_parallel,
             "gpus_per_replica": gpu_config.tensor_parallel,  # GPUs per pod

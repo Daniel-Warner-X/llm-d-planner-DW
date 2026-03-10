@@ -78,10 +78,11 @@ spec:
         {% if simulator_mode %}
         initialDelaySeconds: 10
         {% else %}
-        initialDelaySeconds: 120
+        initialDelaySeconds: 600
         {% endif %}
         periodSeconds: 30
         timeoutSeconds: 10
+        failureThreshold: 5
       readinessProbe:
         httpGet:
           path: /health
@@ -89,13 +90,13 @@ spec:
         {% if simulator_mode %}
         initialDelaySeconds: 5
         {% else %}
-        initialDelaySeconds: 60
+        initialDelaySeconds: 120
         {% endif %}
         periodSeconds: 10
         timeoutSeconds: 5
     {% if not simulator_mode %}
     nodeSelector:
-      nvidia.com/gpu.product: {{ gpu_type }}
+      nvidia.com/gpu.product: {{ gpu_node_selector_label }}
     tolerations:
     - key: nvidia.com/gpu
       operator: Exists
