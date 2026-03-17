@@ -546,6 +546,11 @@ format: ## Auto-format code
 	@if uv run ruff --version >/dev/null 2>&1; then uv run ruff format $(SRC_DIR)/ $(UI_DIR)/; else printf "$(YELLOW)ruff not installed, skipping$(NC)\n"; fi
 	@printf "$(GREEN)✓ Formatting complete$(NC)\n"
 
+typecheck:  ## Run typecheck
+	@printf "$(BLUE)Running typecheck...$(NC)\n"
+	@if uv run mypy --version >/dev/null 2>&1; then uv run mypy $(SRC_DIR)/ $(UI_DIR)/; else printf "$(YELLOW)mypy not installed, skipping$(NC)\n"; fi
+	@printf "$(GREEN)✓ Typecheck complete$(NC)\n"
+
 ##@ Cleanup
 
 clean: ## Clean generated files and caches
