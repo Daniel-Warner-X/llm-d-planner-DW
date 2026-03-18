@@ -18,7 +18,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
 
 # Install Python dependencies (frozen = use lockfile exactly, no-dev = skip dev deps)
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra cluster
 
 # Copy backend source code
 COPY src/neuralnav ./src/neuralnav
