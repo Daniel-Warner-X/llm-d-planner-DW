@@ -538,13 +538,18 @@ test-integration: setup-ollama ## Run integration tests (requires Ollama and DB)
 
 lint: ## Run linters
 	@printf "$(BLUE)Running linters...$(NC)\n"
-	@uv run ruff check $(SRC_DIR)/ $(UI_DIR)/ || printf "$(YELLOW)ruff not installed, skipping$(NC)\n"
+	@if uv run ruff --version >/dev/null 2>&1; then uv run ruff check $(SRC_DIR)/ $(UI_DIR)/; else printf "$(YELLOW)ruff not installed, skipping$(NC)\n"; fi
 	@printf "$(GREEN)✓ Linting complete$(NC)\n"
 
 format: ## Auto-format code
 	@printf "$(BLUE)Formatting code...$(NC)\n"
-	@uv run ruff format $(SRC_DIR)/ $(UI_DIR)/ || printf "$(YELLOW)ruff not installed, skipping$(NC)\n"
+	@if uv run ruff --version >/dev/null 2>&1; then uv run ruff format $(SRC_DIR)/ $(UI_DIR)/; else printf "$(YELLOW)ruff not installed, skipping$(NC)\n"; fi
 	@printf "$(GREEN)✓ Formatting complete$(NC)\n"
+
+typecheck:  ## Run typecheck
+	@printf "$(BLUE)Running typecheck...$(NC)\n"
+	@if uv run mypy --version >/dev/null 2>&1; then uv run mypy $(SRC_DIR)/ $(UI_DIR)/; else printf "$(YELLOW)mypy not installed, skipping$(NC)\n"; fi
+	@printf "$(GREEN)✓ Typecheck complete$(NC)\n"
 
 ##@ Cleanup
 
