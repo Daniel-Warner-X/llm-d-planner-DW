@@ -7,6 +7,7 @@ Usage:
     streamlit run ui/app.py
 """
 
+import base64
 import logging
 import sys
 import time
@@ -69,6 +70,101 @@ st.markdown(
     .block-container { padding-top: 0 !important; }
     /* Transparent header so menu appears inline with content */
     header[data-testid="stHeader"] { background: transparent; }
+    /* Hero: full viewport width, branding aligned to window left (main column stays centered below) */
+    .nn-hero-bleed {
+        width: 100vw;
+        max-width: 100vw;
+        margin-left: calc(50% - 50vw);
+        box-sizing: border-box;
+        padding: 0 1.25rem;
+    }
+    .nn-hero {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.5rem;
+        margin: 0 0 1.25rem 0;
+        padding: 0;
+        line-height: 1.2;
+    }
+    .nn-hero-logo {
+        width: 32px;
+        height: auto;
+        flex-shrink: 0;
+        display: block;
+    }
+    .nn-hero-text {
+        min-width: 0;
+        flex: 0 1 auto;
+        max-width: min(36rem, 100%);
+        text-align: left;
+    }
+    .nn-hero-title {
+        font-size: 1.35rem;
+        font-weight: 700;
+        margin: 0;
+        padding: 0;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        color: var(--text-color, #31333F);
+    }
+    .nn-hero-tagline {
+        font-size: 0.78rem;
+        margin: 0.1rem 0 0 0;
+        padding: 0;
+        line-height: 1.3;
+        color: rgba(49, 51, 63, 0.62);
+    }
+    /* Space between hero and tab bar */
+    .block-container [data-testid="stTabs"] { margin-top: 0.75rem !important; }
+    /* Card header row with 5 cols: title + spacer + ‹ + counter + › (not the full-width Select row) */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(> *:nth-child(5)) {
+        align-items: center !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(> *:nth-child(5)) button {
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        color: inherit !important;
+        font-family: inherit !important;
+        font-size: 0.85rem !important;
+        font-weight: 400 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+        padding: 0 0.12rem !important;
+        min-height: 1.25em !important;
+        height: 1.25em !important;
+        width: auto !important;
+        box-sizing: border-box !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        border-radius: 0 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(> *:nth-child(5)) button:hover {
+        opacity: 0.72 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(> *:nth-child(5)) button:focus-visible {
+        outline: 2px solid rgba(49, 51, 63, 0.35) !important;
+        outline-offset: 2px !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(> *:nth-child(5)) button p,
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(> *:nth-child(5)) button span {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1 !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(> *:nth-child(5)) button [data-testid="stMarkdownContainer"] {
+        margin: 0 !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 100% !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -85,15 +181,28 @@ init_session_state()
 # =============================================================================
 
 
+@st.cache_data
+def _hero_logo_data_uri() -> str:
+    logo_path = Path(__file__).resolve().parent / "static" / "neuralnav-logo.png"
+    b64 = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def render_hero():
     """Render compact hero section with logo."""
-    logo_col, title_col = st.columns([1, 11], vertical_alignment="center")
-    with logo_col:
-        st.image("ui/static/neuralnav-logo.png", width=48)
-    with title_col:
-        st.title("NeuralNav")
-    st.caption(
-        "AI-Powered LLM Deployment Recommendations — From Natural Language to Production in Seconds"
+    st.markdown(
+        f"""
+<div class="nn-hero-bleed">
+  <div class="nn-hero">
+    <img class="nn-hero-logo" src="{_hero_logo_data_uri()}" alt="" />
+    <div class="nn-hero-text">
+      <div class="nn-hero-title">NeuralNav</div>
+      <div class="nn-hero-tagline">AI-Powered LLM Deployment Recommendations — From Natural Language to Production in Seconds</div>
+    </div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
     )
 
 
@@ -110,7 +219,6 @@ def render_use_case_input_tab(priority: str, models_df: pd.DataFrame):
         st.session_state.show_full_table_dialog = False
         st.session_state.show_category_dialog = False
         st.session_state.show_winner_dialog = False
-        st.session_state.show_options_list_expanded = False
 
     # Transfer pending input from button clicks before rendering the text_area widget
     if "pending_user_input" in st.session_state:
@@ -391,7 +499,7 @@ def render_technical_specs_tab():
         st.markdown(
             """
         <div style="padding: 0.75rem 1rem; border-radius: 8px; font-size: 1rem; margin-bottom: 0.75rem; max-width: 50%;">
-            <strong>Step 2 Complete</strong> · You can now view Recommendations
+            <strong>Step 2 Complete</strong> · You can now go to the <strong>Recommendation</strong> tab
         </div>
         """,
             unsafe_allow_html=True,
@@ -399,7 +507,7 @@ def render_technical_specs_tab():
 
 
 def render_results_tab(priority: str, models_df: pd.DataFrame):
-    """Tab 3: Results display - Best Model Recommendations."""
+    """Tab 3: Results display - Model Recommendation."""
     used_priority = st.session_state.get("used_priority", priority)
 
     if not st.session_state.slo_approved:
@@ -513,8 +621,22 @@ def main():
 
     # Tab-based navigation (6 tabs)
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["Define Use Case", "Technical Specification", "Recommendations", "Deployment", "Deployment Management", "Configuration"]
+        ["Define Use Case", "Technical Specification", "Recommendation", "Deployment", "Deployment Management", "Configuration"]
     )
+
+    pending_tab = st.session_state.pop("_pending_tab", None)
+    if pending_tab is not None:
+        components.html(
+            f"""<script>
+            (function() {{
+                const root = window.parent.document.querySelector('[data-testid="stTabs"]');
+                const tabs = root ? root.querySelectorAll('[role="tab"]') : [];
+                const i = {pending_tab};
+                if (tabs.length > i) {{ tabs[i].click(); }}
+            }})();
+            </script>""",
+            height=0,
+        )
 
     with tab1:
         render_use_case_input_tab(priority, models_df)
@@ -533,17 +655,6 @@ def main():
 
     with tab6:
         render_configuration_tab()
-
-    # Auto-switch to pending tab after rerun
-    pending_tab = st.session_state.pop("_pending_tab", None)
-    if pending_tab is not None:
-        components.html(
-            f"""<script>
-            var tabs = window.parent.document.querySelectorAll('[role="tab"]');
-            if (tabs.length > {pending_tab}) {{ tabs[{pending_tab}].click(); }}
-            </script>""",
-            height=0,
-        )
 
 
 if __name__ == "__main__":

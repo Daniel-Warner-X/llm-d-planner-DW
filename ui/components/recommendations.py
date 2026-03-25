@@ -3,48 +3,220 @@
 Category cards, top-5 table, options list, and recommendation results.
 """
 
+import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from api_client import deploy_and_generate_yaml
 from helpers import format_display_name, format_gpu_config, get_scores
 
+# Tab indices for app.py st.tabs (0-based)
+_RECOMMENDATION_TAB_INDEX = 2
+_DEPLOYMENT_TAB_INDEX = 3
 
-def _render_filter_summary():
-    """Render the SLO filter summary stats."""
-    ranked_response = st.session_state.get("ranked_response", {})
-    total_configs = ranked_response.get("total_configs_evaluated", 0)
-    passed_configs = ranked_response.get("configs_after_filters", 0)
 
-    if total_configs <= 0:
-        return
+def _pop_viable_configs_table_state() -> None:
+    """Clear legacy session keys if present (table no longer uses selectable dataframe widget)."""
+    st.session_state.pop("viable_configs_table", None)
+    st.session_state.pop("_viable_configs_last_selection_rows", None)
 
-    all_passed = []
-    for cat in ["balanced", "best_accuracy", "lowest_cost", "lowest_latency", "simplest"]:
-        all_passed.extend(ranked_response.get(cat, []))
-    unique_models = len({r.get("model_name", "") for r in all_passed if r.get("model_name")})
 
-    filter_pct = passed_configs / total_configs * 100
-    st.markdown(
-        f"""
-    <div style="display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1rem; padding: 0.6rem 1rem;
-                border-radius: 8px; ">
-        <span style="font-size: 0.85rem;">
-            <strong style="color: #10B981;">{passed_configs:,}</strong> configs passed SLO filter
-            from <strong>{total_configs:,}</strong> total
-            <span >({filter_pct:.0f}% match)</span>
-        </span>
-        <span >|</span>
-        <span style="font-size: 0.85rem;">
-            <strong>{unique_models}</strong> unique models
-        </span>
-    </div>
-    """,
-        unsafe_allow_html=True,
+def _category_key_matches_selection(sel_cat: str, table_cat_key: str) -> bool:
+    """Cards use short keys (accuracy, latency, cost); table uses API keys (best_accuracy, …)."""
+    if sel_cat == table_cat_key:
+        return True
+    return {
+        "accuracy": "best_accuracy",
+        "latency": "lowest_latency",
+        "cost": "lowest_cost",
+    }.get(sel_cat) == table_cat_key
+
+
+def _row_matches_selected_config(cat_key: str, model_display: str, gpu_str: str) -> bool:
+    """True if this table row is the active deployment selection."""
+    sel = st.session_state.get("deployment_selected_config")
+    sel_cat = st.session_state.get("deployment_selected_category")
+    if not sel or sel_cat is None:
+        return False
+    if not _category_key_matches_selection(sel_cat, cat_key):
+        return False
+    f_model = format_display_name(sel.get("model_name", "Unknown"))
+    f_gpu = format_gpu_config(sel.get("gpu_config", {}) or {})
+    return f_model == model_display and f_gpu == gpu_str
+
+
+def _clear_deployment_after_card_nav() -> None:
+    st.session_state.deployment_selected_config = None
+    st.session_state.deployment_selected_category = None
+    st.session_state.deployment_yaml_generated = False
+    st.session_state.deployment_yaml_files = {}
+    st.session_state.deployment_id = None
+    st.session_state.deployment_error = None
+    st.session_state.deployed_to_cluster = False
+    _pop_viable_configs_table_state()
+
+
+def _build_viable_configs_table_data(ranked_response: dict) -> list[dict]:
+    """Build table rows in stable order (matches DataFrame rows)."""
+    categories = [
+        ("balanced", "Balanced"),
+        ("best_accuracy", "Best Accuracy"),
+        ("lowest_cost", "Lowest Cost"),
+        ("lowest_latency", "Lowest Latency"),
+    ]
+    table_data: list[dict] = []
+    for cat_key, cat_name in categories:
+        recs = ranked_response.get(cat_key, [])
+        for rec in recs[:5]:
+            model_name = format_display_name(rec.get("model_name", "Unknown"))
+            gpu_str = format_gpu_config(rec.get("gpu_config", {}) or {})
+            ttft = rec.get("predicted_ttft_p95_ms", 0)
+            cost = rec.get("cost_per_month_usd", 0)
+            scores = rec.get("scores", {}) or {}
+            accuracy = scores.get("accuracy_score", 0)
+            balanced = scores.get("balanced_score", 0)
+            meets_slo = rec.get("meets_slo", False)
+            table_data.append(
+                {
+                    "cat_key": cat_key,
+                    "rec": rec,
+                    "category": cat_name,
+                    "model": model_name,
+                    "gpu_config": gpu_str,
+                    "ttft": ttft,
+                    "cost": cost,
+                    "accuracy": accuracy,
+                    "balanced": balanced,
+                    "slo": "Yes" if meets_slo else "No",
+                }
+            )
+    return table_data
+
+
+def _viable_configs_display_dataframe(table_data: list[dict]) -> pd.DataFrame:
+    """Read-only table; ✓ marks the row matching the active deployment (from cards)."""
+    return pd.DataFrame(
+        {
+            "✓": [
+                "✓" if _row_matches_selected_config(r["cat_key"], r["model"], r["gpu_config"]) else ""
+                for r in table_data
+            ],
+            "Category": [r["category"] for r in table_data],
+            "Model": [r["model"] for r in table_data],
+            "GPU Config": [r["gpu_config"] for r in table_data],
+            "TTFT (ms)": [r["ttft"] for r in table_data],
+            "Cost/mo": [r["cost"] for r in table_data],
+            "Acc": [r["accuracy"] for r in table_data],
+            "Score": [r["balanced"] for r in table_data],
+            "SLO": [r["slo"] for r in table_data],
+        }
     )
 
 
-def _render_category_card(title, recs_list, highlight_field, category_key, col):
-    """Render a recommendation card for a category with prev/next navigation."""
+def _render_view_deployment_config_button() -> None:
+    """Centered primary button below recommendation cards; opens the Deployment tab."""
+    has_selection = bool(
+        st.session_state.get("deployment_selected_config")
+        and st.session_state.get("deployment_selected_config", {}).get("model_name")
+    )
+    st.markdown('<div style="margin-top: 0.75rem;"></div>', unsafe_allow_html=True)
+    c_l, c_mid, c_r = st.columns([1, 2, 1])
+    with c_mid:
+        if st.button(
+            "View Deployment Config",
+            key="model_rec_goto_deployment",
+            type="primary",
+            disabled=not has_selection,
+            use_container_width=True,
+        ):
+            st.session_state["_pending_tab"] = _DEPLOYMENT_TAB_INDEX
+            st.rerun()
+
+
+def _render_model_recommendation_header() -> None:
+    """Model Recommendation title, SLO stats, and selected model summary."""
+    st.markdown(
+        '<h3 style="font-weight: 600; font-size: 1.375rem; margin: 0 0 0.35rem 0; padding: 0; '
+        'line-height: 1.2; color: var(--text-color, #31333F);">Model Recommendation</h3>',
+        unsafe_allow_html=True,
+    )
+
+    ranked_response = st.session_state.get("ranked_response", {})
+    total_configs = ranked_response.get("total_configs_evaluated", 0)
+    passed_configs = ranked_response.get("configs_after_filters", 0)
+    selected_cfg = st.session_state.get("deployment_selected_config")
+
+    selected_html = ""
+    if selected_cfg and selected_cfg.get("model_name"):
+        selected_model = format_display_name(selected_cfg["model_name"])
+        selected_html = (
+            '<span style="font-size: 0.85rem; white-space: nowrap;">'
+            '<span style="color: #10B981;">✅</span> Selected: '
+            f"<strong>{selected_model}</strong>"
+            "</span>"
+        )
+
+    stats_left = ""
+    bottom_line = ""
+    if total_configs > 0:
+        all_passed = []
+        for cat in ["balanced", "best_accuracy", "lowest_cost", "lowest_latency", "simplest"]:
+            all_passed.extend(ranked_response.get(cat, []))
+        unique_models = len({r.get("model_name", "") for r in all_passed if r.get("model_name")})
+        filter_pct = passed_configs / total_configs * 100
+        stats_left = (
+            f'<span style="font-size: 0.85rem;"><strong style="color: #10B981;">{passed_configs:,}</strong> '
+            f"configs passed SLO filter from <strong>{total_configs:,}</strong> total "
+            f"<span>({filter_pct:.0f}% match)</span></span>"
+        )
+        bottom_line = (
+            f'<span style="font-size: 0.85rem;"><strong>{unique_models}</strong> unique models</span>'
+        )
+
+    col_stats, col_actions = st.columns([3, 1])
+    with col_stats:
+        # Keep stats + unique models in this column so a tall right column would not
+        # push the second line down (full-width row below columns would sit under it).
+        if stats_left or bottom_line:
+            parts = []
+            if stats_left:
+                parts.append(f'<div style="margin: 0; padding: 0;">{stats_left}</div>')
+            if bottom_line:
+                parts.append(
+                    f'<div style="margin: 0.35rem 0 0 0; padding: 0;">{bottom_line}</div>'
+                )
+            st.markdown(
+                '<div class="nn-filter-summary" style="margin: 0 0 1rem 0; padding: 0;">'
+                + "".join(parts)
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div style="margin: 0 0 1rem 0;"></div>',
+                unsafe_allow_html=True,
+            )
+    with col_actions:
+        if selected_html:
+            st.markdown(
+                '<div style="display: flex; justify-content: flex-end; align-items: center; '
+                'min-height: 2.25rem;">'
+                f"{selected_html}</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _render_category_card(
+    title,
+    recs_list,
+    highlight_field,
+    category_key,
+    col,
+    *,
+    show_recommended_badge: bool = False,
+):
+    """Render a recommendation card for a category with prev/next navigation.
+
+    If show_recommended_badge is True, the badge appears only while index 0 is shown.
+    """
     if not recs_list:
         return
 
@@ -72,7 +244,7 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
         ("accuracy", "Accuracy", scores["accuracy"]),
         ("cost", "Cost", scores["cost"]),
         ("latency", "Latency", scores["latency"]),
-        ("final", "Balanced", scores["final"]),
+        ("final", "Balance", scores["final"]),
     ]
     score_parts = []
     for field, label, value in score_items:
@@ -90,10 +262,57 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
         f"Throughput: {throughput:.1f} rps | Cost: ${cost:,.0f}/mo"
     )
 
+    # Recommended badge only for the first ranked model (index 0); hide after prev/next arrows.
+    if show_recommended_badge and idx == 0:
+        title_html = (
+            '<div style="display: flex; align-items: center; justify-content: space-between; '
+            'gap: 0.75rem; flex-wrap: wrap; line-height: 1.7;">'
+            f'<strong style="font-size: 1.05rem;">{title}</strong>'
+            '<span style="display: inline-block; padding: 0.18rem 0.55rem; font-size: 0.7rem; '
+            "font-weight: 600; letter-spacing: 0.03em; color: #047857; "
+            "background: rgba(16, 185, 129, 0.14); border: 1px solid rgba(16, 185, 129, 0.35); "
+            'border-radius: 999px; white-space: nowrap;">Recommended</span>'
+            "</div>"
+        )
+    else:
+        title_html = (
+            f'<div style="line-height: 1.7;"><strong style="font-size: 1.05rem;">{title}</strong></div>'
+        )
+
     with col, st.container(border=True):
+        # Single st.columns row (no nesting) — Streamlit allows at most one column level inside a column
+        if len(recs_list) > 1:
+            last = len(recs_list) - 1
+            # One st.columns row only (no nesting). Buttons avoid <a href="?…"> tab breaks / reloads.
+            c_title, c_sp, c_prev, c_lab, c_next = st.columns(
+                [0.3, 0.28, 0.07, 0.12, 0.07], vertical_alignment="center"
+            )
+            with c_title:
+                st.markdown(title_html, unsafe_allow_html=True)
+            with c_sp:
+                st.empty()
+            with c_prev:
+                if st.button("‹", key=f"prev_{category_key}"):
+                    st.session_state[idx_key] = last if idx == 0 else idx - 1
+                    _clear_deployment_after_card_nav()
+                    st.session_state["_pending_tab"] = _RECOMMENDATION_TAB_INDEX
+                    st.rerun()
+            with c_lab:
+                st.markdown(
+                    f"<div style='text-align: center; font-size: 0.85rem; line-height: 1.25; padding: 0; margin: 0; white-space: nowrap; color: inherit;'>#{idx + 1} of {len(recs_list)}</div>",
+                    unsafe_allow_html=True,
+                )
+            with c_next:
+                if st.button("›", key=f"next_{category_key}"):
+                    st.session_state[idx_key] = 0 if idx == last else idx + 1
+                    _clear_deployment_after_card_nav()
+                    st.session_state["_pending_tab"] = _RECOMMENDATION_TAB_INDEX
+                    st.rerun()
+        else:
+            st.markdown(title_html, unsafe_allow_html=True)
+
         st.markdown(
             f'<div style="line-height: 1.7;">'
-            f'<strong style="font-size: 1.05rem;">{title}</strong><br>'
             f'<span style="font-size: 0.9rem;"><strong>Solution:</strong> Model: {model_name} | Hardware: {hw_count}x {hw_type} | Replicas: {replicas}</span><br>'
             f'<span style="font-size: 0.9rem;"><strong>Scores:</strong> {scores_line}</span><br>'
             f'<span style="font-size: 0.9rem;"><strong>Values:</strong> {metrics_line}</span>'
@@ -101,44 +320,15 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
             unsafe_allow_html=True,
         )
 
-        # Prev/Next navigation (circular)
-        if len(recs_list) > 1:
-            last = len(recs_list) - 1
-            nav_prev, nav_label, nav_next = st.columns([1, 2, 1])
-            with nav_prev:
-                if st.button("<", key=f"prev_{category_key}"):
-                    st.session_state[idx_key] = last if idx == 0 else idx - 1
-                    st.session_state.deployment_selected_config = None
-                    st.session_state.deployment_selected_category = None
-                    st.session_state.deployment_yaml_generated = False
-                    st.session_state.deployment_yaml_files = {}
-                    st.session_state.deployment_id = None
-                    st.session_state.deployment_error = None
-                    st.session_state.deployed_to_cluster = False
-                    st.rerun()
-            with nav_label:
-                st.markdown(
-                    f"<div style='text-align: center; line-height: 2.4; font-size: 0.85rem;'>#{idx + 1} of {len(recs_list)}</div>",
-                    unsafe_allow_html=True,
-                )
-            with nav_next:
-                if st.button("\\>", key=f"next_{category_key}"):
-                    st.session_state[idx_key] = 0 if idx == last else idx + 1
-                    st.session_state.deployment_selected_config = None
-                    st.session_state.deployment_selected_category = None
-                    st.session_state.deployment_yaml_generated = False
-                    st.session_state.deployment_yaml_files = {}
-                    st.session_state.deployment_id = None
-                    st.session_state.deployment_error = None
-                    st.session_state.deployed_to_cluster = False
-                    st.rerun()
-
         selected_category = st.session_state.get("deployment_selected_category")
         is_selected = selected_category == category_key
 
         if is_selected:
             if st.button(
-                "Selected", key=f"selected_{category_key}", use_container_width=True, type="primary"
+                "✅ Selected",
+                key=f"selected_{category_key}",
+                use_container_width=True,
+                type="secondary",
             ):
                 st.session_state.deployment_selected_config = None
                 st.session_state.deployment_selected_category = None
@@ -147,6 +337,7 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
                 st.session_state.deployment_id = None
                 st.session_state.deployment_error = None
                 st.session_state.deployed_to_cluster = False
+                _pop_viable_configs_table_state()
                 st.rerun()
         else:
             if st.button("Select", key=f"select_{category_key}", use_container_width=True):
@@ -156,6 +347,7 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
                 st.session_state.deployment_yaml_files = {}
                 st.session_state.deployment_id = None
                 st.session_state.deployed_to_cluster = False
+                _pop_viable_configs_table_state()
 
                 result = deploy_and_generate_yaml(rec)
                 if result and result.get("success"):
@@ -172,8 +364,7 @@ def render_top5_table(recommendations: list, priority: str):
 
     Uses the backend's pre-ranked lists (ACCURACY-FIRST strategy in analyzer.py).
     """
-    st.subheader("Best Model Recommendations")
-    _render_filter_summary()
+    _render_model_recommendation_header()
 
     use_case = st.session_state.get("detected_use_case", "chatbot_conversational")
 
@@ -195,12 +386,16 @@ def render_top5_table(recommendations: list, priority: str):
 
     # Render 4 category cards in a 2x2 grid
     col1, col2 = st.columns(2)
-    _render_category_card("Balanced", top5_balanced, "final", "balanced", col1)
-    _render_category_card("Best Accuracy", top5_accuracy, "accuracy", "accuracy", col2)
+    _render_category_card(
+        "Balance", top5_balanced, "final", "balanced", col1, show_recommended_badge=True
+    )
+    _render_category_card("Accuracy", top5_accuracy, "accuracy", "accuracy", col2)
 
     col3, col4 = st.columns(2)
-    _render_category_card("Best Latency", top5_latency, "latency", "latency", col3)
-    _render_category_card("Best Cost", top5_cost, "cost", "cost", col4)
+    _render_category_card("Latency", top5_latency, "latency", "latency", col3)
+    _render_category_card("Cost", top5_cost, "cost", "cost", col4)
+
+    _render_view_deployment_config_button()
 
     total_available = len(recommendations)
     if total_available <= 2:
@@ -209,186 +404,54 @@ def render_top5_table(recommendations: list, priority: str):
 
 
 def render_options_list_inline():
-    """Render the expanded options list content inline on the page."""
+    """Render sortable table of ranked deployment configurations."""
     ranked_response = st.session_state.get("ranked_response")
 
     if not ranked_response:
         st.warning("No recommendations available. Please run the recommendation process first.")
         return
 
-    st.markdown(
-        '<div style="padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 1.5rem; margin-top: 1rem;"><h2 style="margin: 0; font-size: 1.5rem;">Configuration Options</h2><p style="margin: 0.5rem 0 0 0; font-size: 0.9rem;">All viable deployment configurations ranked by category</p></div>',
-        unsafe_allow_html=True,
-    )
-
     total_configs = ranked_response.get("total_configs_evaluated", 0)
     configs_after_filters = ranked_response.get("configs_after_filters", 0)
 
     st.markdown(
-        f'<div style="margin-bottom: 1rem; font-size: 0.9rem;">Evaluated <span style="font-weight: 600;">{total_configs}</span> viable configurations, showing <span style="font-weight: 600;">{configs_after_filters}</span> unique options</div>',
+        f"""<div style="margin: 1rem 0 1rem 0; padding: 0; text-align: left;">
+<h3 style="font-weight: 600; font-size: 1.375rem; margin: 0; padding: 0; line-height: 1.2; color: var(--text-color, #31333F);">All viable deployment configurations</h3>
+<p style="margin: 0.35rem 0 0 0; padding: 0; font-size: 0.9rem; line-height: 1.7; color: rgba(49, 51, 63, 0.62); text-align: left;">Evaluated <span style="font-weight: 600;">{total_configs}</span> viable configurations, showing <span style="font-weight: 600;">{configs_after_filters}</span> unique options</p>
+</div>""",
         unsafe_allow_html=True,
     )
 
-    categories = [
-        ("balanced", "Balanced"),
-        ("best_accuracy", "Best Accuracy"),
-        ("lowest_cost", "Lowest Cost"),
-        ("lowest_latency", "Lowest Latency"),
-    ]
-
-    table_data = []
-    for cat_key, cat_name in categories:
-        recs = ranked_response.get(cat_key, [])
-        for rec in recs[:5]:
-            model_name = format_display_name(rec.get("model_name", "Unknown"))
-            gpu_str = format_gpu_config(rec.get("gpu_config", {}))
-            ttft = rec.get("predicted_ttft_p95_ms", 0)
-            cost = rec.get("cost_per_month_usd", 0)
-            scores = rec.get("scores", {}) or {}
-            accuracy = scores.get("accuracy_score", 0)
-            balanced = scores.get("balanced_score", 0)
-            meets_slo = rec.get("meets_slo", False)
-            slo_value = 1 if meets_slo else 0
-
-            table_data.append(
-                {
-                    "category": cat_name,
-                    "model": model_name,
-                    "gpu_config": gpu_str,
-                    "ttft": ttft,
-                    "cost": cost,
-                    "accuracy": accuracy,
-                    "balanced": balanced,
-                    "slo": "Yes" if meets_slo else "No",
-                    "slo_value": slo_value,
-                }
-            )
+    table_data = _build_viable_configs_table_data(ranked_response)
 
     if table_data:
-        rows_html = []
-        for row in table_data:
-            rows_html.append(f"""
-                <tr
-                    data-category="{row['category']}"
-                    data-model="{row['model']}"
-                    data-gpu="{row['gpu_config']}"
-                    data-ttft="{row['ttft']}"
-                    data-cost="{row['cost']}"
-                    data-accuracy="{row['accuracy']}"
-                    data-balanced="{row['balanced']}"
-                    data-slo="{row['slo_value']}">
-                    <td style="padding: 0.75rem 0.5rem; ">{row['category']}</td>
-                    <td style="padding: 0.75rem 0.5rem; font-weight: 500;">{row['model']}</td>
-                    <td style="padding: 0.75rem 0.5rem; font-size: 0.85rem;">{row['gpu_config']}</td>
-                    <td style="padding: 0.75rem 0.5rem; text-align: right; ">{row['ttft']:.0f}ms</td>
-                    <td style="padding: 0.75rem 0.5rem; text-align: right; ">${row['cost']:,.0f}</td>
-                    <td style="padding: 0.75rem 0.5rem; text-align: center; ">{row['accuracy']:.0f}</td>
-                    <td style="padding: 0.75rem 0.5rem; text-align: center; ">{row['balanced']:.1f}</td>
-                    <td style="padding: 0.75rem 0.5rem; text-align: center;">{row['slo']}</td>
-                </tr>
-            """)
+        sig = (
+            ranked_response.get("total_configs_evaluated"),
+            ranked_response.get("configs_after_filters"),
+            len(table_data),
+        )
+        if st.session_state.get("_viable_configs_table_sig") != sig:
+            st.session_state._viable_configs_table_sig = sig
+            _pop_viable_configs_table_state()
 
-        table_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <style>
-            body {{
-                margin: 0;
-                padding: 0;
-                background: transparent;
-                font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            }}
-            .sortable-table {{
-                font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            }}
-            .sortable-table th {{
-                cursor: pointer;
-                user-select: none;
-                position: relative;
-            }}
-            .sortable-table th:hover {{
-                !important;
-            }}
-            .sortable-table th.sort-asc::after {{
-                content: " ▲";
-                font-size: 0.7em;
-                }}
-            .sortable-table th.sort-desc::after {{
-                content: " ▼";
-                font-size: 0.7em;
-                }}
-            .sortable-table tbody tr:hover {{
-                !important;
-            }}
-        </style>
-        </head>
-        <body>
-        <table class="sortable-table" id="recsTableInline" style="width: 100%; border-collapse: collapse; border-radius: 8px;">
-            <thead>
-                <tr >
-                    <th onclick="sortTableInline(0, 'string')" style="text-align: left; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">Category</th>
-                    <th onclick="sortTableInline(1, 'string')" style="text-align: left; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">Model</th>
-                    <th onclick="sortTableInline(2, 'string')" style="text-align: left; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">GPU Config</th>
-                    <th onclick="sortTableInline(3, 'number')" style="text-align: right; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">TTFT</th>
-                    <th onclick="sortTableInline(4, 'number')" style="text-align: right; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">Cost/mo</th>
-                    <th onclick="sortTableInline(5, 'number')" style="text-align: center; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">Acc</th>
-                    <th onclick="sortTableInline(6, 'number')" style="text-align: center; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">Score</th>
-                    <th onclick="sortTableInline(7, 'number')" style="text-align: center; padding: 0.75rem 0.5rem; font-size: 0.85rem; font-weight: 600;">SLO</th>
-                </tr>
-            </thead>
-            <tbody>
-                {''.join(rows_html)}
-            </tbody>
-        </table>
-        <script>
-            let sortDirectionInline = {{}};
-
-            function sortTableInline(columnIndex, type) {{
-                const table = document.getElementById('recsTableInline');
-                const tbody = table.querySelector('tbody');
-                const rows = Array.from(tbody.querySelectorAll('tr'));
-                const headers = table.querySelectorAll('th');
-
-                const key = columnIndex;
-                sortDirectionInline[key] = sortDirectionInline[key] === 'asc' ? 'desc' : 'asc';
-                const isAsc = sortDirectionInline[key] === 'asc';
-
-                headers.forEach(h => {{
-                    h.classList.remove('sort-asc', 'sort-desc');
-                }});
-
-                headers[columnIndex].classList.add(isAsc ? 'sort-asc' : 'sort-desc');
-
-                rows.sort((a, b) => {{
-                    let aVal, bVal;
-
-                    if (type === 'number') {{
-                        const attrs = ['category', 'model', 'gpu', 'ttft', 'cost', 'accuracy', 'balanced', 'slo'];
-                        const attr = 'data-' + attrs[columnIndex];
-                        aVal = parseFloat(a.getAttribute(attr)) || 0;
-                        bVal = parseFloat(b.getAttribute(attr)) || 0;
-                    }} else {{
-                        aVal = a.cells[columnIndex].textContent.trim();
-                        bVal = b.cells[columnIndex].textContent.trim();
-                    }}
-
-                    if (aVal < bVal) return isAsc ? -1 : 1;
-                    if (aVal > bVal) return isAsc ? 1 : -1;
-                    return 0;
-                }});
-
-                rows.forEach(row => tbody.appendChild(row));
-            }}
-        </script>
-        </body>
-        </html>
-        """
-
-        components.html(table_html, height=450, scrolling=True)
-        st.markdown(
-            '<p style="font-size: 0.85rem; margin-top: 0.5rem;">Click on column headers to sort the table</p>',
-            unsafe_allow_html=True,
+        df = _viable_configs_display_dataframe(table_data)
+        st.caption(
+            "✓ marks the active deployment. Select a configuration using the recommendation cards above."
+        )
+        # No on_select / selection_mode — those add Streamlit's row checkbox column, which cannot
+        # stay in sync with card selection; the ✓ column reflects the current deployment instead.
+        st.dataframe(
+            df,
+            column_config={
+                "✓": st.column_config.TextColumn("✓", width=None),
+                "TTFT (ms)": st.column_config.NumberColumn("TTFT (ms)", format="%.0f"),
+                "Cost/mo": st.column_config.NumberColumn("Cost/mo", format="%.0f"),
+                "Acc": st.column_config.NumberColumn("Acc", format="%.0f"),
+                "Score": st.column_config.NumberColumn("Score", format="%.1f"),
+            },
+            hide_index=True,
+            use_container_width=True,
+            height=400,
         )
     else:
         st.warning("No configurations to display")
@@ -433,8 +496,6 @@ def render_recommendation_result(result: dict, priority: str, extraction: dict):
     st.session_state.winner_priority = priority
     st.session_state.winner_extraction = extraction
 
-    st.markdown("---")
-
     # Get all recommendations for the cards
     all_recs = []
     for cat in ["balanced", "best_accuracy", "lowest_cost", "lowest_latency", "simplest"]:
@@ -460,15 +521,5 @@ def render_recommendation_result(result: dict, priority: str, extraction: dict):
     if unique_recs:
         render_top5_table(unique_recs, priority)
 
-    # === LIST OPTIONS SECTION (inline expandable) ===
-    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-    with col_center:
-        is_expanded = st.session_state.get("show_options_list_expanded", False)
-        button_text = "Hide Option List" if is_expanded else "List Options"
-        if st.button(button_text, key="list_options_btn", use_container_width=True):
-            st.session_state.show_options_list_expanded = not is_expanded
-            st.rerun()
-
-    if st.session_state.get("show_options_list_expanded", False):
-        render_options_list_inline()
+    st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+    render_options_list_inline()

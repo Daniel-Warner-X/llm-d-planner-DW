@@ -32,7 +32,7 @@ def render_deployment_management_tab():
         st.info(
             "**No deployments found in cluster**\n\n"
             "To create a deployment:\n"
-            "1. Go to the **Recommendations** tab and select a configuration\n"
+            "1. Go to the **Recommendation** tab and select a configuration\n"
             "2. Go to the **Deployment** tab\n"
             "3. Click **Deploy to Kubernetes**"
         )

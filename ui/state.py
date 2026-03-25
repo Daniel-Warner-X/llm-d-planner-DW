@@ -34,7 +34,6 @@ SESSION_DEFAULTS = {
     "show_category_dialog": False,
     "explore_category": "balanced",
     "show_full_table_dialog": False,
-    "show_options_list_expanded": False,
     # Use case tracking
     "detected_use_case": "chatbot_conversational",
     # Top-5 lists per category

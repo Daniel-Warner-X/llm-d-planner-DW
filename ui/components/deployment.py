@@ -19,11 +19,11 @@ def render_deployment_tab():
 
     if not selected_config:
         st.info(
-            "No configuration selected for deployment. Please select a configuration from the Recommendations tab."
+            "No configuration selected for deployment. Please select a configuration from the Recommendation tab."
         )
         st.markdown("""
         **How to select a configuration:**
-        1. Go to the **Recommendations** tab
+        1. Go to the **Recommendation** tab
         2. Browse the available configurations
         3. Click **Select for Deployment** on your preferred configuration
         """)
