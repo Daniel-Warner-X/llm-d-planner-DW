@@ -137,7 +137,71 @@ jobs:
           oc create namespace $NAMESPACE --dry-run=client -o yaml | oc apply -f -
           oc label namespace $NAMESPACE app=llm-planner-demo --overwrite
 
-          # Deploy Backend (demo mode)
+          # Deploy Ollama (for intent extraction)
+          cat <<EOF | oc apply -n $NAMESPACE -f -
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ollama
+            labels:
+              app: ollama
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: ollama
+            template:
+              metadata:
+                labels:
+                  app: ollama
+              spec:
+                containers:
+                - name: ollama
+                  image: ollama/ollama:latest
+                  ports:
+                  - containerPort: 11434
+                    name: http
+                  resources:
+                    requests:
+                      memory: "512Mi"
+                      cpu: "250m"
+                    limits:
+                      memory: "1Gi"
+                      cpu: "500m"
+                  livenessProbe:
+                    tcpSocket:
+                      port: 11434
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  readinessProbe:
+                    tcpSocket:
+                      port: 11434
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                  command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    ollama serve &
+                    sleep 10
+                    ollama pull qwen2.5:7b
+                    wait
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ollama
+          spec:
+            selector:
+              app: ollama
+            ports:
+            - protocol: TCP
+              port: 11434
+              targetPort: 11434
+          EOF
+
+          # Deploy Backend (demo mode with Ollama)
           cat <<EOF | oc apply -n $NAMESPACE -f -
           ---
           apiVersion: v1
@@ -149,6 +213,8 @@ jobs:
             API_HOST: "0.0.0.0"
             API_PORT: "8000"
             CORS_ORIGINS: "http://localhost:8501"
+            OLLAMA_HOST: "http://ollama:11434"
+            OLLAMA_MODEL: "qwen2.5:7b"
           ---
           apiVersion: apps/v1
           kind: Deployment
@@ -295,6 +361,7 @@ jobs:
           EOF
 
           echo "⏳ Waiting for deployments..."
+          oc wait --for=condition=available --timeout=300s deployment/ollama -n $NAMESPACE || true
           oc wait --for=condition=available --timeout=180s deployment/backend -n $NAMESPACE || true
           oc wait --for=condition=available --timeout=180s deployment/ui -n $NAMESPACE || true
 
