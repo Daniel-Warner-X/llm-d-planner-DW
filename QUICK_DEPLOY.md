@@ -1,6 +1,6 @@
 # Quick Deploy Cheat Sheet - GitHub Actions
 
-> Last updated: April 1, 2026
+> Last updated: April 1, 2026 (v2)
 
 ## One-Time Setup (5 minutes)
 
