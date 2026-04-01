@@ -170,10 +170,10 @@ jobs:
                     mountPath: /tmp/ollama
                   resources:
                     requests:
-                      memory: "4Gi"
+                      memory: "2Gi"
                       cpu: "500m"
                     limits:
-                      memory: "6Gi"
+                      memory: "4Gi"
                       cpu: "1000m"
                   livenessProbe:
                     tcpSocket:
@@ -193,7 +193,7 @@ jobs:
                     mkdir -p /tmp/ollama/models
                     ollama serve &
                     sleep 15
-                    ollama pull qwen2.5:7b
+                    ollama pull qwen2.5:3b
                     wait
                 volumes:
                 - name: ollama-data
@@ -225,7 +225,7 @@ jobs:
             API_PORT: "8000"
             CORS_ORIGINS: "http://localhost:8501"
             OLLAMA_HOST: "http://ollama:11434"
-            OLLAMA_MODEL: "qwen2.5:7b"
+            OLLAMA_MODEL: "qwen2.5:3b"
           ---
           apiVersion: apps/v1
           kind: Deployment
