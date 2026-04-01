@@ -125,8 +125,8 @@ jobs:
             exit 1
           fi
 
-          # Setup kubeconfig
-          echo "$KUBE_CONFIG" | base64 -d > /tmp/kubeconfig
+          # Setup kubeconfig (remove whitespace/newlines before decoding)
+          echo "$KUBE_CONFIG" | tr -d '\n\r ' | base64 -d > /tmp/kubeconfig
           export KUBECONFIG=/tmp/kubeconfig
 
           echo "🚀 Deploying to namespace: $NAMESPACE"
