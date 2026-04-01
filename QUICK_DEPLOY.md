@@ -86,10 +86,13 @@ oc delete namespace $NS
 
 - ✅ Your UI changes (Streamlit app)
 - ✅ Backend API (with demo data)
+- ✅ Recommendation engine (using JSON benchmarks)
 - ❌ No PostgreSQL (uses JSON files)
-- ❌ No Ollama (limited AI features)
+- ❌ No Ollama (no "Analyze Use Case" feature)
 
 **Resources**: ~768MB RAM, 0.35 CPU (very light!)
+
+**Note**: Demo deployments don't include LLM-based intent extraction. Use the sample use cases in the UI dropdown or direct specification entry to test recommendations.
 
 ## Auto-Deploy Triggers
 
