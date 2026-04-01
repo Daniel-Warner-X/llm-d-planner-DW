@@ -118,17 +118,19 @@ class BenchmarkData:
 class BenchmarkRepository:
     """Repository for querying model benchmark data from PostgreSQL."""
 
-    def __init__(self, database_url: str | None = None):
+    def __init__(self, database_url: str | None = None, test_connection: bool = True):
         """
         Initialize benchmark repository.
 
         Args:
             database_url: PostgreSQL connection string (defaults to DATABASE_URL env var)
+            test_connection: If True, test connection on init. Set to False for lazy connection.
         """
         self.database_url = database_url or os.getenv(
             "DATABASE_URL", "postgresql://postgres:neuralnav@localhost:5432/neuralnav"
         )
-        self._test_connection()
+        if test_connection:
+            self._test_connection()
 
     def _test_connection(self):
         """Test database connection on initialization."""

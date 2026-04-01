@@ -105,6 +105,7 @@ def init_app_state(app: FastAPI) -> None:
     app.state.cluster_managers = {}  # dict[str, KubernetesClusterManager]
 
     if source_type == "model_catalog":
+        from planner.knowledge_base.benchmarks import BenchmarkRepository
         from planner.knowledge_base.model_catalog_client import ModelCatalogClient
         from planner.recommendation.config_finder import ConfigFinder
         from planner.recommendation.quality.usecase_scorer import UseCaseQualityScorer
@@ -113,8 +114,15 @@ def init_app_state(app: FastAPI) -> None:
         app.state.model_catalog_client = client
         quality_scorer = UseCaseQualityScorer()
 
+        # Create lazy BenchmarkRepository (no connection test - will be synced in background)
+        benchmark_repo = BenchmarkRepository(test_connection=False)
+
         # Wire shared instances so sync updates propagate to recommendations
-        config_finder = ConfigFinder(catalog=app.state.model_catalog, quality_scorer=quality_scorer)
+        config_finder = ConfigFinder(
+            benchmark_repo=benchmark_repo,
+            catalog=app.state.model_catalog,
+            quality_scorer=quality_scorer,
+        )
         app.state.workflow = RecommendationWorkflow(config_finder=config_finder)
 
         database_url = os.getenv(
