@@ -220,7 +220,7 @@ jobs:
           metadata:
             name: backend-demo-config
           data:
-            NEURALNAV_BENCHMARK_SOURCE: "json"
+            NEURALNAV_BENCHMARK_SOURCE: "model_catalog"
             API_HOST: "0.0.0.0"
             API_PORT: "8000"
             CORS_ORIGINS: "http://localhost:8501"
