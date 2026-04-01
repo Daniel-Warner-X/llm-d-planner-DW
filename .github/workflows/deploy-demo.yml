@@ -162,31 +162,42 @@ jobs:
                   ports:
                   - containerPort: 11434
                     name: http
+                  env:
+                  - name: OLLAMA_MODELS
+                    value: "/tmp/ollama/models"
+                  volumeMounts:
+                  - name: ollama-data
+                    mountPath: /tmp/ollama
                   resources:
                     requests:
-                      memory: "512Mi"
-                      cpu: "250m"
-                    limits:
                       memory: "1Gi"
                       cpu: "500m"
+                    limits:
+                      memory: "2Gi"
+                      cpu: "1000m"
                   livenessProbe:
                     tcpSocket:
                       port: 11434
-                    initialDelaySeconds: 30
+                    initialDelaySeconds: 60
                     periodSeconds: 10
                   readinessProbe:
                     tcpSocket:
                       port: 11434
-                    initialDelaySeconds: 10
+                    initialDelaySeconds: 30
                     periodSeconds: 5
                   command:
                   - /bin/sh
                   - -c
                   - |
+                    export HOME=/tmp/ollama
+                    mkdir -p /tmp/ollama/models
                     ollama serve &
-                    sleep 10
+                    sleep 15
                     ollama pull qwen2.5:7b
                     wait
+                volumes:
+                - name: ollama-data
+                  emptyDir: {}
           ---
           apiVersion: v1
           kind: Service
