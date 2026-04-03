@@ -1,4 +1,4 @@
-"""Backend API client for the NeuralNav UI.
+"""Backend API client for the Planner UI.
 
 All HTTP communication with the backend lives here.
 """
@@ -144,6 +144,32 @@ def fetch_priority_weights() -> dict | None:
     except Exception as e:
         logger.warning(f"Failed to fetch priority weights: {e}")
         return None
+
+
+@st.cache_data(ttl=3600)
+def fetch_gpu_types() -> dict[str, dict]:
+    """Fetch all GPU types from the API, keyed by canonical gpu_type name.
+
+    Returns a dict where each key is the short gpu_type identifier from ModelCatalog
+    (e.g. "H100", "L4", "A100-40") and the value is the full GPU info dict.
+
+    Example return value:
+        {
+            "H100": {"gpu_type": "H100", "memory_gb": 80, "cost_per_hour_usd": 3.0, ...},
+            "L4":   {"gpu_type": "L4",   "memory_gb": 24, "cost_per_hour_usd": 0.8, ...},
+        }
+
+    The keys are the same short names used in benchmark data and recommendation results,
+    not longer alias strings like "NVIDIA-H100-SXM5-80GB".
+    """
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/v1/gpu-types", timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        return {g["gpu_type"]: g for g in data.get("gpu_types", [])}
+    except Exception as e:
+        logger.warning(f"Failed to fetch GPU types: {e}")
+        return {}
 
 
 def fetch_ranked_recommendations(

@@ -1,7 +1,7 @@
 """Detect GPU types available on the Kubernetes/OpenShift cluster.
 
 Reads nvidia.com/gpu.product labels from cluster nodes and maps them
-to NeuralNav canonical GPU names used in the benchmark database.
+to Planner canonical GPU names used in the benchmark database.
 
 The kubernetes package is an optional dependency. When not installed
 or when no cluster is accessible, returns an empty list gracefully.
@@ -16,7 +16,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # TTL cache for detected GPU types (avoids K8s API call on every request)
-_GPU_CACHE_TTL = int(os.getenv("NEURALNAV_CLUSTER_GPU_CACHE_TTL", "300"))
+_GPU_CACHE_TTL = int(os.getenv("PLANNER_CLUSTER_GPU_CACHE_TTL", "300"))
 
 
 class _GPUCache:
@@ -47,9 +47,13 @@ try:
 except ImportError:
     _HAS_KUBERNETES = False
 
-# Map nvidia.com/gpu.product label values to NeuralNav canonical names.
-# All values MUST be members of CANONICAL_GPUS in gpu_normalizer.py.
+# Map nvidia.com/gpu.product label values to Planner canonical names.
+# All values MUST be valid gpu_type entries in ModelCatalog (model_catalog.json).
 # Keys are stored lowercase for case-insensitive matching.
+#
+# Note: AMD GPUs (MI300X) use a different label key (amd.com/gpu), not
+# nvidia.com/gpu.product. AMD detection would require a separate label
+# lookup and is not covered by this map.
 GPU_PRODUCT_MAP: dict[str, str] = {
     "nvidia-l4": "L4",
     "nvidia-a100-sxm4-40gb": "A100-40",
@@ -61,6 +65,13 @@ GPU_PRODUCT_MAP: dict[str, str] = {
     "nvidia-h100-pcie-80gb": "H100",
     "nvidia-h200": "H200",
     "nvidia-b200": "B200",
+    "nvidia-a10g": "A10G",
+    "nvidia-l40": "L40",
+    "nvidia-l40-48gb": "L40",
+    "nvidia-l20": "L20",
+    "nvidia-b100": "B100",
+    "nvidia-h200-141gb": "H200",
+    "nvidia-h200-141gb-hbm3": "H200",
 }
 
 
@@ -90,7 +101,7 @@ def detect_cluster_gpus() -> list[str]:
     """Detect GPU types available on the current cluster.
 
     Reads nvidia.com/gpu.product labels from all cluster nodes,
-    maps them to NeuralNav canonical GPU names. Results are cached
+    maps them to Planner canonical GPU names. Results are cached
     for _GPU_CACHE_TTL seconds to avoid repeated K8s API calls.
 
     Returns:
@@ -103,8 +114,8 @@ def detect_cluster_gpus() -> list[str]:
             return _cache.result
 
         # Check env var toggle
-        if os.environ.get("NEURALNAV_DETECT_CLUSTER_GPUS", "true").lower() == "false":
-            logger.debug("Cluster GPU detection disabled via NEURALNAV_DETECT_CLUSTER_GPUS=false")
+        if os.environ.get("PLANNER_DETECT_CLUSTER_GPUS", "true").lower() == "false":
+            logger.debug("Cluster GPU detection disabled via PLANNER_DETECT_CLUSTER_GPUS=false")
             return []
 
         # Check if kubernetes package is available

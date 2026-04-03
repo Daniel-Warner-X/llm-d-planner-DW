@@ -127,7 +127,7 @@ class DeploymentGenerator:
         if gpu_info is None:
             raise ValueError(
                 f"Unknown GPU type '{gpu_config.gpu_type}'. "
-                f"Add it to the GPU catalog in data/configuration/model_catalog.json."
+                f"Add it to the GPU catalog in data/configuration/gpu_catalog.json."
             )
         gpu_hourly_rate = gpu_info.cost_per_hour_usd
         gpu_node_selector_label = gpu_info.node_selector_label

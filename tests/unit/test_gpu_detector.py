@@ -8,24 +8,37 @@ import pytest
 
 @pytest.mark.unit
 class TestGPUProductMap:
-    """Validate GPU_PRODUCT_MAP values match CANONICAL_GPUS."""
+    """Validate GPU_PRODUCT_MAP values are known to ModelCatalog."""
 
-    def test_all_map_values_are_canonical(self):
+    def test_all_map_values_are_in_model_catalog(self):
         from planner.cluster.gpu_detector import GPU_PRODUCT_MAP
-        from planner.shared.utils.gpu_normalizer import CANONICAL_GPUS
+        from planner.knowledge_base.model_catalog import ModelCatalog
 
+        catalog = ModelCatalog()
         for label, canonical in GPU_PRODUCT_MAP.items():
             assert (
-                canonical in CANONICAL_GPUS
-            ), f"GPU_PRODUCT_MAP['{label}'] = '{canonical}' is not in CANONICAL_GPUS"
+                catalog.get_gpu_type(canonical) is not None
+            ), f"GPU_PRODUCT_MAP['{label}'] = '{canonical}' is not in ModelCatalog"
 
-    def test_all_canonical_gpus_have_at_least_one_mapping(self):
+    def test_map_covers_all_nvidia_catalog_gpu_types(self):
+        """Regression: Every NVIDIA GPU in catalog should be in GPU_PRODUCT_MAP."""
         from planner.cluster.gpu_detector import GPU_PRODUCT_MAP
-        from planner.shared.utils.gpu_normalizer import CANONICAL_GPUS
+        from planner.knowledge_base.model_catalog import ModelCatalog
 
-        mapped_canonical = set(GPU_PRODUCT_MAP.values())
-        for gpu in CANONICAL_GPUS:
-            assert gpu in mapped_canonical, f"Canonical GPU '{gpu}' has no entry in GPU_PRODUCT_MAP"
+        catalog = ModelCatalog()
+        # Get all GPU types from catalog
+        all_gpu_types = catalog.get_all_gpu_types()
+        catalog_gpu_types = {gpu.gpu_type for gpu in all_gpu_types}
+
+        # Remove MI300X (uses amd.com/gpu label, not covered by this map)
+        nvidia_gpu_types = catalog_gpu_types - {"MI300X"}
+
+        # Get unique GPU types in the map
+        map_gpu_types = set(GPU_PRODUCT_MAP.values())
+
+        # Every NVIDIA GPU should be represented in the map
+        missing = nvidia_gpu_types - map_gpu_types
+        assert not missing, f"GPUs in catalog but not in GPU_PRODUCT_MAP: {missing}"
 
 
 def _make_node(name: str, gpu_label: str | None = None) -> MagicMock:
@@ -55,7 +68,7 @@ class TestDetectClusterGPUs:
         result = detect_cluster_gpus()
         assert result == []
 
-    @patch.dict(os.environ, {"NEURALNAV_DETECT_CLUSTER_GPUS": "false"})
+    @patch.dict(os.environ, {"PLANNER_DETECT_CLUSTER_GPUS": "false"})
     def test_returns_empty_when_disabled_via_env(self):
         from planner.cluster.gpu_detector import detect_cluster_gpus
 
@@ -197,3 +210,69 @@ class TestDetectClusterGPUs:
         detect_cluster_gpus()
         # Second call should use cache, not call list_nodes again
         assert mock_list.call_count == 1
+
+    @patch("planner.cluster.gpu_detector._HAS_KUBERNETES", True)
+    @patch("planner.cluster.gpu_detector._load_k8s_config")
+    @patch("planner.cluster.gpu_detector._list_nodes")
+    def test_detects_a10g(self, mock_list, mock_config):
+        """Detect A10G GPU from K8s node label."""
+        from planner.cluster.gpu_detector import detect_cluster_gpus
+
+        mock_list.return_value = [_make_node("node1", "nvidia-a10g")]
+        result = detect_cluster_gpus()
+        assert result == ["A10G"]
+
+    @patch("planner.cluster.gpu_detector._HAS_KUBERNETES", True)
+    @patch("planner.cluster.gpu_detector._load_k8s_config")
+    @patch("planner.cluster.gpu_detector._list_nodes")
+    def test_detects_l40(self, mock_list, mock_config):
+        """Detect L40 GPU from K8s node label."""
+        from planner.cluster.gpu_detector import detect_cluster_gpus
+
+        mock_list.return_value = [_make_node("node1", "nvidia-l40")]
+        result = detect_cluster_gpus()
+        assert result == ["L40"]
+
+    @patch("planner.cluster.gpu_detector._HAS_KUBERNETES", True)
+    @patch("planner.cluster.gpu_detector._load_k8s_config")
+    @patch("planner.cluster.gpu_detector._list_nodes")
+    def test_detects_l20(self, mock_list, mock_config):
+        """Detect L20 GPU from K8s node label."""
+        from planner.cluster.gpu_detector import detect_cluster_gpus
+
+        mock_list.return_value = [_make_node("node1", "nvidia-l20")]
+        result = detect_cluster_gpus()
+        assert result == ["L20"]
+
+    @patch("planner.cluster.gpu_detector._HAS_KUBERNETES", True)
+    @patch("planner.cluster.gpu_detector._load_k8s_config")
+    @patch("planner.cluster.gpu_detector._list_nodes")
+    def test_detects_b100(self, mock_list, mock_config):
+        """Detect B100 GPU from K8s node label."""
+        from planner.cluster.gpu_detector import detect_cluster_gpus
+
+        mock_list.return_value = [_make_node("node1", "nvidia-b100")]
+        result = detect_cluster_gpus()
+        assert result == ["B100"]
+
+    @patch("planner.cluster.gpu_detector._HAS_KUBERNETES", True)
+    @patch("planner.cluster.gpu_detector._load_k8s_config")
+    @patch("planner.cluster.gpu_detector._list_nodes")
+    def test_detects_h200_141gb(self, mock_list, mock_config):
+        """Detect H200 GPU from K8s node label (nvidia-h200-141gb)."""
+        from planner.cluster.gpu_detector import detect_cluster_gpus
+
+        mock_list.return_value = [_make_node("node1", "nvidia-h200-141gb")]
+        result = detect_cluster_gpus()
+        assert result == ["H200"]
+
+    @patch("planner.cluster.gpu_detector._HAS_KUBERNETES", True)
+    @patch("planner.cluster.gpu_detector._load_k8s_config")
+    @patch("planner.cluster.gpu_detector._list_nodes")
+    def test_detects_h200_141gb_hbm3(self, mock_list, mock_config):
+        """Detect H200 GPU from K8s node label (nvidia-h200-141gb-hbm3)."""
+        from planner.cluster.gpu_detector import detect_cluster_gpus
+
+        mock_list.return_value = [_make_node("node1", "nvidia-h200-141gb-hbm3")]
+        result = detect_cluster_gpus()
+        assert result == ["H200"]

@@ -5,6 +5,7 @@ Uses ModelCatalog as the single source of truth for GPU aliases.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -12,14 +13,30 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Canonical GPU names from benchmark data
-CANONICAL_GPUS = {"L4", "A100-40", "A100-80", "H100", "H200", "B200"}
-
 # Expansion map for shorthand/ambiguous names
 # When user says "A100" without specifying variant, include both
 GPU_EXPANSIONS = {
     "A100": ["A100-80", "A100-40"],
 }
+
+# Known GPU model tokens, ordered longest-first to prevent partial matches.
+# E.g., "L40" must be checked before "L4", "B200" before "B100".
+_KNOWN_GPU_TOKENS = (
+    "MI300X",
+    "A100",
+    "A10G",
+    "B200",
+    "B100",
+    "H100",
+    "H200",
+    "L40",
+    "L20",
+    "L4",
+    "T4",
+)
+
+# Vendor prefixes to strip, ordered longest-first
+_VENDOR_PREFIXES = ("NVIDIA-GEFORCE-", "NVIDIA-", "AMD-INSTINCT-", "AMD-", "TESLA-")
 
 # Singleton catalog instance to avoid repeated loading
 _catalog_instance: "ModelCatalog | None" = None
@@ -33,6 +50,74 @@ def _get_catalog() -> "ModelCatalog":
 
         _catalog_instance = ModelCatalog()
     return _catalog_instance
+
+
+def _disambiguate_expansion(key: str, original_upper: str) -> list[str]:
+    """Disambiguate an expansion key using memory info from the original string.
+
+    For "A100": if "40" appears as a word boundary in original -> A100-40 only.
+    If "80" appears -> A100-80 only. Otherwise return both variants.
+
+    Examples:
+        >>> _disambiguate_expansion("A100", "NVIDIA-A100-SXM4-40GB")
+        ["A100-40"]
+
+        >>> _disambiguate_expansion("A100", "NVIDIA-A100-SXM4-80GB")
+        ["A100-80"]
+
+        >>> _disambiguate_expansion("A100", "NVIDIA-A100")
+        ["A100-40", "A100-80"]
+
+        >>> _disambiguate_expansion("A100", "A100-40GB-PCIE")
+        ["A100-40"]
+    """
+    variants = GPU_EXPANSIONS[key]
+    # Look for memory size indicators in the original string
+    if re.search(r"(?:^|[-_])40(?:GB)?(?:$|[-_])", original_upper):
+        return [v for v in variants if "40" in v]
+    if re.search(r"(?:^|[-_])80(?:GB)?(?:$|[-_])", original_upper):
+        return [v for v in variants if "80" in v]
+    return list(variants)
+
+
+def _fuzzy_resolve(raw: str, catalog: "ModelCatalog") -> list[str]:
+    """Pattern-based fallback for GPU strings not found by exact/alias lookup.
+
+    Called only after GPU_EXPANSIONS check and catalog.get_gpu_type() miss.
+    Returns list of canonical uppercase GPU type names, or empty list.
+    """
+    upper = raw.strip().upper()
+    if not upper:
+        return []
+
+    # Step 1: Strip vendor prefix
+    stripped = upper
+    for prefix in _VENDOR_PREFIXES:
+        if stripped.startswith(prefix):
+            stripped = stripped[len(prefix) :]
+            break
+
+    # Step 2: Try catalog lookup on stripped string
+    gpu_info = catalog.get_gpu_type(stripped)
+    if gpu_info:
+        return [gpu_info.gpu_type.upper()]
+
+    # Step 3: Check GPU_EXPANSIONS on stripped string
+    if stripped in GPU_EXPANSIONS:
+        return _disambiguate_expansion(stripped, upper)
+
+    # Step 4: Progressive suffix removal (split by "-")
+    parts = stripped.split("-")
+    for length in range(len(parts) - 1, 0, -1):
+        candidate = "-".join(parts[:length])
+
+        gpu_info = catalog.get_gpu_type(candidate)
+        if gpu_info:
+            return [gpu_info.gpu_type.upper()]
+        if candidate in GPU_EXPANSIONS:
+            return _disambiguate_expansion(candidate, upper)
+
+    return []
 
 
 def normalize_gpu_types(gpu_types: list[str]) -> list[str]:
@@ -80,14 +165,16 @@ def normalize_gpu_types(gpu_types: list[str]) -> list[str]:
             logger.debug(f"Resolved '{gpu}' to '{gpu_info.gpu_type}' via ModelCatalog")
             continue
 
-        # Check if it's already a canonical name (direct match)
-        if gpu_upper in CANONICAL_GPUS:
-            normalized.add(gpu_upper)
+        # Fallback: pattern-based fuzzy resolution
+        resolved = _fuzzy_resolve(gpu_stripped, catalog)
+        if resolved:
+            normalized.update(resolved)
+            logger.debug(f"Fuzzy-resolved '{gpu}' to {resolved}")
             continue
 
-        # Unknown GPU type - log warning and skip
+        # Truly unknown GPU type - log warning and skip
         logger.warning(
-            f"Unknown GPU type '{gpu}' - not found in ModelCatalog or canonical list. "
+            f"Unknown GPU type '{gpu}' - not found in ModelCatalog or by pattern matching. "
             "Skipping this GPU filter."
         )
 

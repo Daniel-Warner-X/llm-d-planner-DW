@@ -1,4 +1,4 @@
-# Backend Dockerfile for NeuralNav
+# Backend Dockerfile for Planner
 FROM --platform=linux/amd64 python:3.11-slim
 
 # Set working directory

@@ -105,12 +105,14 @@ class GPUType:
 class ModelCatalog:
     """Repository for model and GPU metadata."""
 
-    def __init__(self, data_path: Path | None = None):
+    def __init__(self, data_path: Path | None = None, gpu_catalog_path: Path | None = None):
         """
         Initialize model catalog.
 
         Args:
             data_path: Path to model_catalog.json
+            gpu_catalog_path: Path to gpu_catalog.json (defaults to gpu_catalog.json
+                              in the same directory as data_path)
         """
         if data_path is None:
             data_path = (
@@ -121,36 +123,42 @@ class ModelCatalog:
             )
 
         self.data_path = data_path
+        self.gpu_catalog_path = gpu_catalog_path or data_path.parent / "gpu_catalog.json"
         self._models: dict[str, ModelInfo] = {}
         self._gpu_types: dict[str, GPUType] = {}
         self._gpu_alias_lookup: dict[str, GPUType] = {}  # Maps aliases to GPUType
         self._load_data()
 
     def _load_data(self):
-        """Load catalog data from JSON file."""
+        """Load catalog data from JSON files."""
         try:
             with open(self.data_path) as f:
                 data = json.load(f)
-
-                # Load models
                 for model_data in data["models"]:
                     model = ModelInfo(model_data)
                     self._models[model.model_id] = model
-
-                # Load GPU types and build alias lookup
-                for gpu_data in data["gpu_types"]:
-                    gpu = GPUType(gpu_data)
-                    self._gpu_types[gpu.gpu_type] = gpu
-                    # Add all aliases to lookup (case-insensitive)
-                    for alias in gpu.aliases:
-                        self._gpu_alias_lookup[alias.lower()] = gpu
-
-                logger.info(
-                    f"Loaded {len(self._models)} models and {len(self._gpu_types)} GPU types"
-                )
         except Exception as e:
             logger.error(f"Failed to load model catalog from {self.data_path}: {e}")
             raise
+
+        try:
+            with open(self.gpu_catalog_path) as f:
+                gpu_data = json.load(f)
+                for gpu_entry in gpu_data["gpu_types"]:
+                    gpu = GPUType(gpu_entry)
+                    self._gpu_types[gpu.gpu_type] = gpu
+                    for alias in gpu.aliases:
+                        # Normalize underscores to dashes for consistent alias matching
+                        normalized_alias = alias.lower().replace("_", "-")
+                        self._gpu_alias_lookup[normalized_alias] = gpu
+        except FileNotFoundError:
+            logger.error(f"GPU catalog not found at {self.gpu_catalog_path}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load GPU catalog from {self.gpu_catalog_path}: {e}")
+            raise
+
+        logger.info(f"Loaded {len(self._models)} models and {len(self._gpu_types)} GPU types")
 
     def get_model(self, model_id: str) -> ModelInfo | None:
         """Get model by ID."""
@@ -159,7 +167,7 @@ class ModelCatalog:
     def get_gpu_type(self, gpu_type: str) -> GPUType | None:
         """Get GPU type metadata.
 
-        Supports lookup by primary gpu_type name or any alias (case-insensitive).
+        Supports lookup by primary gpu_type name or any alias (case-insensitive and underscore-normalized).
 
         Args:
             gpu_type: GPU type identifier or alias
@@ -170,8 +178,9 @@ class ModelCatalog:
         # First try exact match on primary name
         if gpu_type in self._gpu_types:
             return self._gpu_types[gpu_type]
-        # Then try alias lookup (case-insensitive)
-        return self._gpu_alias_lookup.get(gpu_type.lower())
+        # Then try alias lookup (case-insensitive and normalize underscores to dashes)
+        normalized_lookup = gpu_type.lower().replace("_", "-")
+        return self._gpu_alias_lookup.get(normalized_lookup)
 
     def find_models_for_use_case(self, use_case: str) -> list[ModelInfo]:
         """

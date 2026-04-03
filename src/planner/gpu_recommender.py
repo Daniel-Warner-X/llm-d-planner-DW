@@ -1,8 +1,6 @@
 """Cost management for GPU recommendations"""
 
-import json
 import os
-from pathlib import Path
 from typing import Any
 
 from llm_optimizer.performance import (
@@ -17,120 +15,62 @@ from planner.capacity_planner import (
     get_model_info_from_hf,
     get_text_config,
 )
+from planner.knowledge_base.model_catalog import ModelCatalog
 
 
 class CostManager:
-    """Manages GPU cost data with support for defaults and user overrides"""
+    """Manages GPU costs using ModelCatalog as the source of truth.
 
-    def __init__(self, custom_costs: dict[str, float] | None = None):
-        """
-        Initialize cost manager
+    Custom costs override catalog values, enabling per-deployment pricing
+    without modifying the shared catalog.
+    """
 
-        Args:
-            custom_costs: Optional dict mapping GPU names to custom costs
-
-        Raises:
-            ValueError: If custom_costs contains invalid values
-        """
-        self.default_costs = self._load_default_costs()
-
-        # Validate custom costs
+    def __init__(
+        self,
+        custom_costs: dict[str, float] | None = None,
+        catalog: ModelCatalog | None = None,
+    ):
+        self._catalog = catalog if catalog is not None else ModelCatalog()
         if custom_costs:
             for gpu_name, cost in custom_costs.items():
                 if cost is not None and (not isinstance(cost, int | float) or cost < 0):
                     raise ValueError(
                         f"Invalid cost for {gpu_name}: {cost}. Cost must be a non-negative number."
                     )
-
         self.custom_costs = custom_costs or {}
-
-        # Track if any custom costs were provided
         self.has_custom_costs = bool(
             custom_costs and any(v is not None for v in custom_costs.values())
         )
 
     def get_cost(self, gpu_name: str, num_gpus: int = 1) -> float | None:
+        """Return the cost for a GPU, scaled by the number of GPUs.
+
+        Custom costs take precedence over catalog values.
+        Returns None if the GPU is not found.
         """
-        Get cost for GPU configuration
-
-        Args:
-            gpu_name: Name of the GPU
-            num_gpus: Number of GPUs
-
-        Returns:
-            Total cost or None if cost not available
-        """
-        # Check custom costs first
-        if gpu_name in self.custom_costs:
-            custom_cost = self.custom_costs[gpu_name]
-            if custom_cost is not None:
-                return custom_cost * num_gpus
-
-        # Fall back to default costs
-        if gpu_name in self.default_costs and "cost" in self.default_costs[gpu_name]:
-            return float(self.default_costs[gpu_name]["cost"]) * num_gpus
-
-        return None
+        if gpu_name in self.custom_costs and self.custom_costs[gpu_name] is not None:
+            return self.custom_costs[gpu_name] * num_gpus
+        gpu = self._catalog.get_gpu_type(gpu_name)
+        return gpu.cost_per_hour_usd * num_gpus if gpu else None
 
     def get_all_costs(self) -> dict[str, float]:
-        """
-        Get all GPU costs (custom overrides defaults)
-
-        Returns:
-            Dict mapping GPU names to cost
-        """
-        costs = {}
-
-        # Start with defaults (skip non-GPU entries like _disclaimer, _cost_description)
-        for gpu_name, data in self.default_costs.items():
-            if isinstance(data, dict) and "cost" in data:
-                costs[gpu_name] = data["cost"]
-
-        # Override with custom costs (filter out None values)
-        for gpu_name, cost in self.custom_costs.items():
-            if cost is not None:
-                costs[gpu_name] = cost
-
+        """Return all GPU costs, with custom costs overriding catalog values."""
+        costs = {gpu.gpu_type: gpu.cost_per_hour_usd for gpu in self._catalog.get_all_gpu_types()}
+        costs.update({k: v for k, v in self.custom_costs.items() if v is not None})
         return costs
 
     def has_cost(self, gpu_name: str) -> bool:
-        """
-        Check if cost data is available for a GPU
-
-        Args:
-            gpu_name: Name of the GPU
-
-        Returns:
-            True if cost data is available, False otherwise
-        """
-        return gpu_name in self.custom_costs or gpu_name in self.default_costs
+        """Return True if a cost is available for this GPU (catalog or custom)."""
+        return gpu_name in self.custom_costs or self._catalog.get_gpu_type(gpu_name) is not None
 
     def is_using_custom_costs(self) -> bool:
-        """
-        Check if any custom costs are being used
-
-        Returns:
-            True if custom costs were provided, False if using only defaults
-        """
+        """Return True if any custom costs were provided."""
         return self.has_custom_costs
 
-    def _load_default_costs(self) -> dict[str, Any]:
-        """
-        Load default costs from JSON file
-
-        Returns:
-            Dict mapping GPU names to cost data dictionaries
-        """
-        # Navigate from planner module to repo root, then to data/configuration
-        cost_file = (
-            Path(__file__).parent.parent.parent / "data" / "configuration" / "gpu_costs.json"
-        )
-
-        if cost_file.exists():
-            with open(cost_file) as f:
-                return dict(json.load(f))
-
-        return {}
+    @property
+    def default_costs(self) -> dict[str, float]:
+        """Return default GPU costs from catalog (before custom overrides)."""
+        return {gpu.gpu_type: gpu.cost_per_hour_usd for gpu in self._catalog.get_all_gpu_types()}
 
 
 class GPURecommender:

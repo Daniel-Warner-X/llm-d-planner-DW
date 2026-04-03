@@ -48,11 +48,25 @@ def catalog(tmp_path):
                 "approval_status": "approved",
             }
         ],
-        "gpu_types": [],
+    }
+    gpu_data = {
+        "gpu_types": [
+            {
+                "gpu_type": "test-gpu",
+                "aliases": ["test-gpu"],
+                "memory_gb": 24,
+                "compute_capability": "8.0",
+                "typical_use_cases": ["inference"],
+                "cost_per_hour_usd": 1.0,
+                "availability": "high",
+            }
+        ]
     }
     p = tmp_path / "model_catalog.json"
     p.write_text(json.dumps(data))
-    return ModelCatalog(data_path=p)
+    gpu_p = tmp_path / "gpu_catalog.json"
+    gpu_p.write_text(json.dumps(gpu_data))
+    return ModelCatalog(data_path=p, gpu_catalog_path=gpu_p)
 
 
 @pytest.mark.unit
