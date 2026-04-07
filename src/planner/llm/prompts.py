@@ -8,6 +8,7 @@ Expected JSON schema:
   "user_count": <integer>,
   "domain_specialization": ["general"|"code"|"multilingual"|"enterprise"],
   "preferred_gpu_types": ["<list of GPU types if mentioned, empty list if not specified>"],
+  "preferred_models": ["<list of model IDs in HuggingFace format if mentioned, empty list if not specified>"],
   "accuracy_priority": "low|medium|high",
   "cost_priority": "low|medium|high",
   "latency_priority": "low|medium|high",
@@ -87,6 +88,13 @@ GPU extraction examples (canonical names: L4, A100-40, A100-80, H100, H200, B200
 - "a100-80" or "A100-80GB" → preferred_gpu_types: ["A100-80"]
 - "l4" or "L4" → preferred_gpu_types: ["L4"]
 - No GPU mentioned → preferred_gpu_types: []
+
+Model extraction examples (use HuggingFace format from model catalog):
+- "deploy Llama 3.3 70B" or "use llama 70b" → preferred_models: ["meta-llama/Llama-3.3-70B-Instruct"]
+- "I want to use Qwen3-32B" → preferred_models: ["Qwen/Qwen3-32B"]
+- "compare granite and llama for my use case" → preferred_models: ["ibm-granite/granite-3.1-8b-instruct", "meta-llama/Llama-3.1-8B-Instruct"]
+- "run mistral small" → preferred_models: ["mistralai/Mistral-Small-24B-Instruct-2501"]
+- No model mentioned → preferred_models: []
 
 Priority extraction (for scoring weights - use "medium" as baseline, adjust based on context):
 - accuracy_priority: "high" if user mentions accuracy matters, quality is important, accuracy is critical, best model, or top quality. "low" if user says good enough or accuracy less important.

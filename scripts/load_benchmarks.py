@@ -9,6 +9,7 @@ Core loading logic lives in planner.knowledge_base.loader and is
 shared with the /api/v1/db/* API endpoints.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -65,7 +66,17 @@ def load_benchmarks_json(json_file=None):
 def main():
     """Main function."""
     # Parse command-line arguments
-    json_file = sys.argv[1] if len(sys.argv) > 1 else None
+    parser = argparse.ArgumentParser(description="Load benchmark data into PostgreSQL")
+    parser.add_argument("json_file", nargs="?", default=None, help="Path to benchmark JSON file")
+    parser.add_argument(
+        "--source", default="local", help="Data source identifier (default: local)"
+    )
+    parser.add_argument(
+        "--confidence-level",
+        default="estimated",
+        help="Confidence level for the data (default: estimated)",
+    )
+    args = parser.parse_args()
 
     print("=" * 60)
     print("Loading Benchmark Data into PostgreSQL")
@@ -73,7 +84,7 @@ def main():
     print()
 
     # Load benchmarks from JSON
-    benchmarks = load_benchmarks_json(json_file)
+    benchmarks = load_benchmarks_json(args.json_file)
     print(f"Loaded {len(benchmarks)} benchmarks from JSON")
 
     # Connect to database
@@ -84,7 +95,9 @@ def main():
 
     try:
         # Insert benchmarks using shared loader
-        stats = insert_benchmarks(conn, benchmarks)
+        stats = insert_benchmarks(
+            conn, benchmarks, source=args.source, confidence_level=args.confidence_level
+        )
 
         print("\nDatabase Statistics:")
         print(f"  Models: {stats['num_models']}")

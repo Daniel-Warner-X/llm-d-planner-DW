@@ -129,7 +129,10 @@ def init_app_state(app: FastAPI) -> None:
     else:
         app.state.model_catalog_client = None
         app.state.model_catalog_sync_thread = None
-        app.state.workflow = RecommendationWorkflow()
+        from planner.recommendation.config_finder import ConfigFinder
+
+        config_finder = ConfigFinder(catalog=app.state.model_catalog)
+        app.state.workflow = RecommendationWorkflow(config_finder=config_finder)
         logger.info("Using PostgreSQL as benchmark source")
 
 

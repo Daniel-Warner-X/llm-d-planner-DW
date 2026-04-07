@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS exported_summaries (
 -- Idempotent migrations for existing databases
 ALTER TABLE exported_summaries ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'local';
 ALTER TABLE exported_summaries ADD COLUMN IF NOT EXISTS model_uri text;
+ALTER TABLE exported_summaries ADD COLUMN IF NOT EXISTS confidence_level text NOT NULL DEFAULT 'estimated';
+COMMENT ON COLUMN exported_summaries.confidence_level IS 'Trust level: benchmarked (real or validated benchmarks), estimated (analytical/roofline models)';
 
 -- Unique constraint on config_id (required for ON CONFLICT in upsert queries)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_config_id_unique ON exported_summaries (config_id);

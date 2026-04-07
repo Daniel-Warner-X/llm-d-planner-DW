@@ -90,17 +90,19 @@ def test_model_catalog_mode_creates_client_and_syncs():
 @pytest.mark.unit
 @patch.dict("os.environ", {"PLANNER_BENCHMARK_SOURCE": "postgresql"}, clear=False)
 def test_postgresql_workflow_uses_defaults():
-    """When source is postgresql, init_app_state() creates default RecommendationWorkflow."""
+    """When source is postgresql, init_app_state() creates RecommendationWorkflow with shared catalog."""
     app = _make_mock_app()
     with (
         patch("planner.api.dependencies.RecommendationWorkflow") as mock_wf_cls,
-        patch("planner.api.dependencies.ModelCatalog"),
+        patch("planner.api.dependencies.ModelCatalog") as mock_mc,
         patch("planner.api.dependencies.SLOTemplateRepository"),
         patch("planner.api.dependencies.DeploymentGenerator"),
         patch("planner.api.dependencies.YAMLValidator"),
+        patch("planner.recommendation.config_finder.ConfigFinder") as mock_cf_cls,
     ):
         deps.init_app_state(app)
-        mock_wf_cls.assert_called_once_with()
+        mock_cf_cls.assert_called_once_with(catalog=mock_mc.return_value)
+        mock_wf_cls.assert_called_once_with(config_finder=mock_cf_cls.return_value)
         assert app.state.workflow == mock_wf_cls.return_value
         assert app.state.model_catalog_client is None
 
@@ -116,6 +118,7 @@ def test_init_app_state_sets_all_singletons():
         patch("planner.api.dependencies.SLOTemplateRepository") as mock_slo,
         patch("planner.api.dependencies.DeploymentGenerator") as mock_dg,
         patch("planner.api.dependencies.YAMLValidator") as mock_yv,
+        patch("planner.recommendation.config_finder.ConfigFinder"),
     ):
         deps.init_app_state(app)
 

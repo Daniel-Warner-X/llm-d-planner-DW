@@ -60,8 +60,24 @@ def normalize_benchmark_fields(benchmark: dict) -> dict:
     return normalized
 
 
-def prepare_benchmark_for_insert(benchmark: dict) -> dict:
-    """Prepare a benchmark record for database insertion."""
+def prepare_benchmark_for_insert(
+    benchmark: dict,
+    source: str = "local",
+    confidence_level: str = "estimated",
+) -> dict:
+    """Prepare a benchmark record for database insertion.
+
+    Normalizes field names from various JSON formats, generates a UUID
+    and config_id, sets timestamps, and applies source/confidence_level.
+
+    Args:
+        benchmark: Raw benchmark dict (from JSON file or estimation output).
+        source: Data source identifier, e.g. 'blis', 'llm-optimizer'.
+        confidence_level: Trust level — 'benchmarked' or 'estimated'.
+
+    Returns:
+        Dict ready for insertion into exported_summaries.
+    """
     # First normalize field names from different JSON formats
     prepared = normalize_benchmark_fields(benchmark)
 
@@ -97,7 +113,8 @@ def prepare_benchmark_for_insert(benchmark: dict) -> dict:
     prepared.setdefault("profiler_type", None)
     prepared.setdefault("profiler_image", None)
     prepared.setdefault("profiler_tag", None)
-    prepared["source"] = "local"
+    prepared["source"] = source
+    prepared["confidence_level"] = confidence_level
 
     return prepared
 
@@ -119,7 +136,7 @@ _INSERT_QUERY = """
         prompt_tokens, prompt_tokens_stdev, prompt_tokens_min, prompt_tokens_max,
         output_tokens, output_tokens_min, output_tokens_max, output_tokens_stdev,
         profiler_type, profiler_image, profiler_tag,
-        source
+        source, confidence_level
     ) VALUES (
         %(id)s, %(config_id)s, %(model_hf_repo)s, %(provider)s, %(type)s,
         %(ttft_mean)s, %(ttft_p90)s, %(ttft_p95)s, %(ttft_p99)s,
@@ -135,13 +152,18 @@ _INSERT_QUERY = """
         %(prompt_tokens)s, %(prompt_tokens_stdev)s, %(prompt_tokens_min)s, %(prompt_tokens_max)s,
         %(output_tokens)s, %(output_tokens_min)s, %(output_tokens_max)s, %(output_tokens_stdev)s,
         %(profiler_type)s, %(profiler_image)s, %(profiler_tag)s,
-        %(source)s
+        %(source)s, %(confidence_level)s
     )
     ON CONFLICT (config_id) DO NOTHING;
 """
 
 
-def insert_benchmarks(conn, benchmarks: list[dict]) -> dict:
+def insert_benchmarks(
+    conn,
+    benchmarks: list[dict],
+    source: str = "local",
+    confidence_level: str = "estimated",
+) -> dict:
     """Insert benchmarks into the database (append mode).
 
     Duplicates (same config_id) are silently skipped.
@@ -149,6 +171,8 @@ def insert_benchmarks(conn, benchmarks: list[dict]) -> dict:
     Args:
         conn: psycopg2 connection
         benchmarks: List of benchmark dicts from JSON
+        source: Data source identifier (default: "local")
+        confidence_level: Confidence level for the data (default: "estimated")
 
     Returns:
         Dict with insertion stats: {inserted, total_in_db, stats}
@@ -163,7 +187,10 @@ def insert_benchmarks(conn, benchmarks: list[dict]) -> dict:
     conn.commit()
 
     # Prepare benchmarks with required fields
-    prepared_benchmarks = [prepare_benchmark_for_insert(b) for b in benchmarks]
+    prepared_benchmarks = [
+        prepare_benchmark_for_insert(b, source=source, confidence_level=confidence_level)
+        for b in benchmarks
+    ]
 
     logger.info(f"Inserting {len(prepared_benchmarks)} benchmark records...")
     execute_batch(cursor, _INSERT_QUERY, prepared_benchmarks, page_size=100)

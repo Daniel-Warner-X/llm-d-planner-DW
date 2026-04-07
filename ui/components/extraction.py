@@ -4,6 +4,7 @@ Extraction result display, approval workflow, and edit form.
 """
 
 import streamlit as st
+from api_client import fetch_catalog_model_ids, fetch_gpu_types
 
 
 def _format_priorities(extraction: dict) -> str:
@@ -23,8 +24,16 @@ def _format_priorities(extraction: dict) -> str:
     return ", ".join(parts) if parts else "Default"
 
 
+def _format_models(extraction: dict) -> str:
+    """Format preferred models display."""
+    models = extraction.get("preferred_models", []) or st.session_state.get("preferred_models", [])
+    if not models:
+        return "Any"
+    return ", ".join(models)
+
+
 def render_extraction_result(extraction: dict, priority: str):
-    """Render extraction results (read-only, after approval)."""
+    """Render extraction results (read-only, after approval) with modify button."""
     st.subheader("Extracted Business Context")
 
     use_case = extraction.get("use_case", "unknown")
@@ -32,13 +41,21 @@ def render_extraction_result(extraction: dict, priority: str):
     user_count = extraction.get("user_count", 0)
     hardware = extraction.get("hardware") or "Any GPU"
     priorities = _format_priorities(extraction)
+    models = _format_models(extraction)
 
     st.markdown(
         f"**Use Case:** {use_case_display}  \n"
         f"**Expected Users:** {user_count:,}  \n"
         f"**Hardware:** {hardware}  \n"
+        f"**Models:** {models}  \n"
         f"**Priorities:** {priorities}"
     )
+
+    if st.button("Modify Business Context", use_container_width=False, key="modify_after_approve"):
+        st.session_state.extraction_approved = False
+        st.session_state.slo_approved = None
+        st.session_state.recommendation_result = None
+        st.rerun()
 
 
 def render_extraction_with_approval(extraction: dict, models_df):
@@ -50,11 +67,13 @@ def render_extraction_with_approval(extraction: dict, models_df):
     user_count = extraction.get("user_count", 0)
     hardware = extraction.get("hardware") or "Any GPU"
     priorities = _format_priorities(extraction)
+    models = _format_models(extraction)
 
     st.markdown(
         f"**Use Case:** {use_case_display}  \n"
         f"**Expected Users:** {user_count:,}  \n"
         f"**Hardware:** {hardware}  \n"
+        f"**Models:** {models}  \n"
         f"**Priorities:** {priorities}"
     )
 
@@ -162,18 +181,49 @@ def render_extraction_edit_form(extraction: dict, models_df):
             key="edit_priority",
         )
 
-        hardware_options = ["Any GPU", "H100", "A100", "A10G", "L4", "T4"]
-        current_hardware = extraction.get("hardware") or "Any GPU"
-        hw_idx = (
-            hardware_options.index(current_hardware) if current_hardware in hardware_options else 0
+        # GPU multi-select from catalog
+        gpu_catalog = fetch_gpu_types()
+        gpu_options = sorted(gpu_catalog.keys()) if gpu_catalog else []
+        current_gpus = extraction.get("preferred_gpu_types", [])
+        # Ensure current values are valid options
+        valid_current_gpus = [g for g in current_gpus if g in gpu_options]
+
+        new_gpu_types = st.multiselect(
+            "Hardware (GPUs)",
+            gpu_options,
+            default=valid_current_gpus,
+            key="edit_gpu_types",
+            help="Select one or more GPU types, or leave empty for any GPU",
         )
 
-        new_hardware = st.selectbox(
-            "Hardware",
-            hardware_options,
-            index=hw_idx,
-            key="edit_hardware",
+    # Model selection
+    st.markdown("**Model Preferences** (optional)")
+    col_models, col_custom = st.columns(2)
+    with col_models:
+        # Get catalog models for multiselect
+        catalog_model_ids = fetch_catalog_model_ids()
+        current_models = extraction.get("preferred_models", [])
+        catalog_current = [m for m in current_models if m in catalog_model_ids]
+
+        new_catalog_models = st.multiselect(
+            "Catalog Models",
+            catalog_model_ids,
+            default=catalog_current,
+            key="edit_catalog_models",
+            help="Select from approved model catalog",
         )
+    with col_custom:
+        custom_current = [m for m in current_models if m not in catalog_model_ids]
+        new_custom_models_str = st.text_input(
+            "Custom HuggingFace Model IDs",
+            value=", ".join(custom_current),
+            key="edit_custom_models",
+            help="Comma-separated HuggingFace model IDs (e.g., meta-llama/Llama-3.3-70B-Instruct)",
+        )
+
+    # Merge catalog + custom models
+    custom_models_list = [m.strip() for m in new_custom_models_str.split(",") if m.strip()]
+    all_preferred_models = list(dict.fromkeys(new_catalog_models + custom_models_list))
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -184,8 +234,11 @@ def render_extraction_edit_form(extraction: dict, models_df):
                 "use_case": new_use_case,
                 "user_count": new_user_count,
                 "priority": new_priority,
-                "hardware": new_hardware if new_hardware != "Any GPU" else None,
+                "hardware": ", ".join(new_gpu_types) if new_gpu_types else None,
+                "preferred_gpu_types": new_gpu_types,
+                "preferred_models": all_preferred_models,
             }
+            st.session_state.preferred_models = all_preferred_models
             st.session_state.edited_extraction = edited
             # Apply edits back to extraction_result so the approval view shows updated values
             st.session_state.extraction_result.update(edited)

@@ -30,6 +30,12 @@ class CostManager:
         custom_costs: dict[str, float] | None = None,
         catalog: ModelCatalog | None = None,
     ):
+        """Initialize cost manager.
+
+        Args:
+            custom_costs: Optional GPU name → cost/hour overrides.
+            catalog: Optional ModelCatalog instance; creates one if not provided.
+        """
         self._catalog = catalog if catalog is not None else ModelCatalog()
         if custom_costs:
             for gpu_name, cost in custom_costs.items():
@@ -94,6 +100,7 @@ class GPURecommender:
         max_latency: float | None = None,
         # Cost parameters
         custom_gpu_costs: dict[str, float] | None = None,
+        catalog: ModelCatalog | None = None,
     ):
         """
         Initialize GPU Recommender.
@@ -111,6 +118,7 @@ class GPURecommender:
             max_itl: Maximum inter-token latency constraint (ms)
             max_latency: Maximum end-to-end latency constraint (s)
             custom_gpu_costs: Optional dict mapping GPU names to custom costs
+            catalog: Optional ModelCatalog instance (avoids reloading JSON files)
         """
 
         # Read HF Token from environment variable
@@ -133,15 +141,22 @@ class GPURecommender:
         self.max_latency = max_latency
 
         # Initialize cost manager
-        self.cost_manager = CostManager(custom_costs=custom_gpu_costs)
+        self.cost_manager = CostManager(custom_costs=custom_gpu_costs, catalog=catalog)
 
         # Store results after recommendation
         self.gpu_results: dict[str, PerformanceEstimationResult] = {}
         self.failed_gpus: dict[str, str] = {}
 
     def get_gpu_results(self) -> tuple[dict[str, PerformanceEstimationResult], dict[str, str]]:
-        """
-        Runs bento's recommendation engine
+        """Run BentoML roofline estimation for each GPU in gpu_list.
+
+        Builds SLO constraints from max_ttft/max_itl/max_latency, then
+        calls llm_optimizer's run_performance_estimation per GPU. Uses
+        GPU-specific max_gpus from max_gpus_per_type when available.
+
+        Returns:
+            Tuple of (gpu_results dict keyed by GPU name,
+                      failed_gpus dict keyed by GPU name with error messages).
         """
 
         gpu_results = {}
@@ -152,13 +167,14 @@ class GPURecommender:
             # Use GPU-specific max_gpus if configured, otherwise use default
             num_gpus = self.max_gpus_per_type.get(gpu_name, self.max_gpus)
 
-            constraints = ""
+            constraint_parts = []
             if self.max_ttft is not None:
-                constraints += f"ttft:p95<={self.max_ttft}ms"
+                constraint_parts.append(f"ttft:p95<={self.max_ttft}ms")
             if self.max_itl is not None:
-                constraints += f"itl:p95<={self.max_itl}ms"
+                constraint_parts.append(f"itl:p95<={self.max_itl}ms")
             if self.max_latency is not None:
-                constraints += f"e2e_latency:p95<={self.max_latency}s"
+                constraint_parts.append(f"e2e_latency:p95<={self.max_latency}s")
+            constraints = ";".join(constraint_parts)
 
             params = PerformanceEstimationParams(
                 model=self.model_id,

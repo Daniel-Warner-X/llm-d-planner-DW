@@ -50,6 +50,9 @@ SESSION_DEFAULTS: dict[str, Any] = {
     "cat_idx_accuracy": 0,
     "cat_idx_latency": 0,
     "cat_idx_cost": 0,
+    # Estimated performance
+    "preferred_models": [],
+    "enable_estimated": True,
     # Deployment tab
     "deployment_selected_config": None,
     "deployment_yaml_files": {},

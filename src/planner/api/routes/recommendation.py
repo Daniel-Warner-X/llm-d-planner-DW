@@ -54,6 +54,12 @@ class RankedRecommendationFromSpecRequest(BaseModel):
     e2e_target_ms: int
     percentile: Literal["mean", "p90", "p95", "p99"] = "p95"
 
+    # Model preferences
+    preferred_models: list[str] | None = None  # User-specified HF model IDs
+
+    # Estimated performance
+    enable_estimated: bool = True  # Run roofline estimation for missing benchmarks
+
     # Ranking options
     min_accuracy: int | None = None
     max_cost: float | None = None
@@ -186,6 +192,7 @@ async def ranked_recommend_from_spec(
         logger.info(f"  use_case: {request.use_case}")
         logger.info(f"  user_count: {request.user_count}")
         logger.info(f"  preferred_gpu_types: {request.preferred_gpu_types}")
+        logger.info(f"  preferred_models: {request.preferred_models}")
         logger.info(f"  prompt_tokens: {request.prompt_tokens}")
         logger.info(f"  output_tokens: {request.output_tokens}")
         logger.info(f"  expected_qps: {request.expected_qps}")
@@ -196,6 +203,7 @@ async def ranked_recommend_from_spec(
         logger.info(f"  min_accuracy: {request.min_accuracy}")
         logger.info(f"  max_cost: {request.max_cost}")
         logger.info(f"  include_near_miss: {request.include_near_miss}")
+        logger.info(f"  enable_estimated: {request.enable_estimated}")
         if request.weights:
             logger.info(
                 f"  weights: accuracy={request.weights.accuracy}, price={request.weights.price}, "
@@ -212,6 +220,7 @@ async def ranked_recommend_from_spec(
                 "user_count": request.user_count,
                 "domain_specialization": ["general"],
                 "preferred_gpu_types": request.preferred_gpu_types or [],
+                "preferred_models": request.preferred_models or [],
             },
             "traffic_profile": {
                 "prompt_tokens": request.prompt_tokens,
@@ -243,6 +252,7 @@ async def ranked_recommend_from_spec(
             max_cost=request.max_cost,
             include_near_miss=request.include_near_miss,
             weights=weights_dict,
+            enable_estimated=request.enable_estimated,
         )
 
         logger.info(

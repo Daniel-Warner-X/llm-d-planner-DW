@@ -226,6 +226,7 @@ def render_use_case_input_tab(priority: str, models_df: pd.DataFrame):
                 "custom_e2e",
                 "custom_qps",
                 "used_priority",
+                "_last_spec_fingerprint",
             ]:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -243,6 +244,7 @@ def render_use_case_input_tab(priority: str, models_df: pd.DataFrame):
         st.session_state.slo_approved = None
         st.session_state.recommendation_result = None
         st.session_state.edited_extraction = None
+        st.session_state.pop("_last_spec_fingerprint", None)
         # Clear previous recommendation selection and deployment state
         st.session_state.deployment_selected_config = None
         st.session_state.deployment_selected_category = None
@@ -266,6 +268,7 @@ def render_use_case_input_tab(priority: str, models_df: pd.DataFrame):
                 st.session_state.slo_approved = None
                 st.session_state.edited_extraction = None
                 st.session_state.ranked_response = None
+                st.session_state.pop("_last_spec_fingerprint", None)
 
                 for key in [
                     "accuracy_priority",
@@ -376,10 +379,14 @@ def render_technical_specs_tab():
     render_slo_with_approval(final_extraction)
 
     if st.session_state.slo_approved is True:
+        if st.session_state.recommendation_result is not None:
+            status_msg = "<strong>Step 2 Complete</strong> · You can now view Recommendations"
+        else:
+            status_msg = "<strong>Step 2 Complete</strong> · Generating recommendations…"
         st.markdown(
-            """
+            f"""
         <div style="padding: 0.75rem 1rem; border-radius: 8px; font-size: 1rem; margin-bottom: 0.75rem; max-width: 50%;">
-            <strong>Step 2 Complete</strong> · You can now view Recommendations
+            {status_msg}
         </div>
         """,
             unsafe_allow_html=True,
@@ -418,10 +425,6 @@ def render_results_tab(priority: str, models_df: pd.DataFrame):
         st.session_state.edited_extraction or st.session_state.extraction_result or {}
     )
 
-    # Always regenerate recommendations to ensure fresh SLO filtering
-    st.session_state.recommendation_result = None
-    st.session_state.pop("ranked_response", None)
-
     # Get all specification values from session state
     use_case = final_extraction.get("use_case", "chatbot_conversational")
     user_count = final_extraction.get("user_count", 1000)
@@ -447,27 +450,56 @@ def render_results_tab(priority: str, models_df: pd.DataFrame):
     }
 
     preferred_gpu_types = final_extraction.get("preferred_gpu_types", [])
+    preferred_models = st.session_state.get("preferred_models") or final_extraction.get(
+        "preferred_models", []
+    )
+    enable_estimated = st.session_state.get("enable_estimated", True)
 
-    with st.spinner(f"Scoring {len(models_df)} models with MCDM..."):
-        recommendation = fetch_ranked_recommendations(
-            use_case=use_case,
-            user_count=user_count,
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens,
-            expected_qps=float(qps_target),
-            ttft_target_ms=int(ttft_target),
-            itl_target_ms=int(itl_target),
-            e2e_target_ms=int(e2e_target),
-            weights=weights,
-            include_near_miss=False,
-            percentile=percentile,
-            preferred_gpu_types=preferred_gpu_types,
-        )
+    # Build a fingerprint of all spec values so we only re-fetch when inputs change
+    spec_fingerprint = (
+        use_case,
+        user_count,
+        prompt_tokens,
+        output_tokens,
+        float(qps_target),
+        int(ttft_target),
+        int(itl_target),
+        int(e2e_target),
+        tuple(sorted(weights.items())),
+        percentile,
+        tuple(sorted(preferred_gpu_types)),
+        tuple(sorted(preferred_models)),
+        enable_estimated,
+    )
 
-    if recommendation is None:
-        st.error("Unable to get recommendations. Please ensure backend is running.")
-    else:
-        st.session_state.recommendation_result = recommendation
+    # Only fetch recommendations if specs changed or no cached result
+    if (
+        st.session_state.recommendation_result is None
+        or st.session_state.get("_last_spec_fingerprint") != spec_fingerprint
+    ):
+        with st.spinner(f"Scoring {len(models_df)} models with MCDM..."):
+            recommendation = fetch_ranked_recommendations(
+                use_case=use_case,
+                user_count=user_count,
+                prompt_tokens=prompt_tokens,
+                output_tokens=output_tokens,
+                expected_qps=float(qps_target),
+                ttft_target_ms=int(ttft_target),
+                itl_target_ms=int(itl_target),
+                e2e_target_ms=int(e2e_target),
+                weights=weights,
+                include_near_miss=False,
+                percentile=percentile,
+                preferred_gpu_types=preferred_gpu_types,
+                preferred_models=preferred_models,
+                enable_estimated=enable_estimated,
+            )
+
+        if recommendation is None:
+            st.error("Unable to get recommendations. Please ensure backend is running.")
+        else:
+            st.session_state.recommendation_result = recommendation
+            st.session_state._last_spec_fingerprint = spec_fingerprint
 
     if st.session_state.recommendation_result:
         render_recommendation_result(

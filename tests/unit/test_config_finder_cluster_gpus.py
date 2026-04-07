@@ -51,7 +51,7 @@ class TestClusterGPUIntersection:
     def _call(self, cluster_gpu_types=None, preferred_gpu_types=None):
         """Helper to call plan_all_capacities and return gpu_types from the first repo call."""
         intent = _make_intent(preferred_gpu_types=preferred_gpu_types or [])
-        self.finder.plan_all_capacities(
+        _result, _warnings = self.finder.plan_all_capacities(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             intent=intent,
@@ -78,7 +78,7 @@ class TestClusterGPUIntersection:
     def test_empty_intersection_returns_no_configs(self):
         """Cluster has L4, user wants H100 -> empty intersection, early return."""
         intent = _make_intent(preferred_gpu_types=["H100"])
-        result = self.finder.plan_all_capacities(
+        result, _warnings = self.finder.plan_all_capacities(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             intent=intent,
@@ -121,7 +121,7 @@ class TestClusterGPUIntersection:
         # but we verify it retried without the filter.
         self.mock_repo.find_configurations_meeting_slo.side_effect = [[], []]
         intent = _make_intent()
-        self.finder.plan_all_capacities(
+        _result, _warnings = self.finder.plan_all_capacities(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             intent=intent,
@@ -138,7 +138,7 @@ class TestClusterGPUIntersection:
         """Cluster+user GPU intersection has no benchmarks -> no fallback (user chose)."""
         self.mock_repo.find_configurations_meeting_slo.return_value = []
         intent = _make_intent(preferred_gpu_types=["H100"])
-        result = self.finder.plan_all_capacities(
+        result, _warnings = self.finder.plan_all_capacities(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             intent=intent,

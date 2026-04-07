@@ -62,6 +62,37 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
     replicas = gpu_cfg.get("replicas", 1)
     cost = rec.get("cost_per_month_usd", 0)
 
+    # Confidence badge
+    bench_metrics = rec.get("benchmark_metrics", {}) or {}
+    confidence = bench_metrics.get("confidence_level", "benchmarked")
+    badge_styles = {
+        "benchmarked": ("Benchmarked", "#10B981", "Based on real hardware benchmark data."),
+        "estimated": (
+            "Estimated",
+            "#F59E0B",
+            "Based on roofline model estimation. Actual performance may vary.",
+        ),
+    }
+    badge_label, badge_color, badge_tooltip = badge_styles.get(
+        confidence, badge_styles["benchmarked"]
+    )
+    badge_html = (
+        f'<span title="{badge_tooltip}" style="font-size: 0.7rem; font-weight: 600; '
+        f"color: {badge_color}; border: 1px solid {badge_color}; border-radius: 4px; "
+        f'padding: 1px 6px; margin-left: 8px; vertical-align: middle;">'
+        f"{badge_label}</span>"
+    )
+
+    # Source badge (e.g., "blis", "llm-optimizer")
+    source = bench_metrics.get("source")
+    if source:
+        badge_html += (
+            f'<span title="Data source: {source}" style="font-size: 0.7rem; font-weight: 600; '
+            f"color: #6B7280; border: 1px solid #D1D5DB; border-radius: 4px; "
+            f'padding: 1px 6px; margin-left: 4px; vertical-align: middle;">'
+            f"{source}</span>"
+        )
+
     # Performance metrics (P95)
     ttft = rec.get("predicted_ttft_p95_ms") or 0
     itl = rec.get("predicted_itl_p95_ms") or 0
@@ -94,7 +125,7 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
     with col, st.container(border=True):
         st.markdown(
             f'<div style="line-height: 1.7;">'
-            f'<strong style="font-size: 1.05rem;">{title}</strong><br>'
+            f'<strong style="font-size: 1.05rem;">{title}</strong>{badge_html}<br>'
             f'<span style="font-size: 0.9rem;"><strong>Solution:</strong> Model: {model_name} | Hardware: {hw_count}x {hw_type} | Replicas: {replicas}</span><br>'
             f'<span style="font-size: 0.9rem;"><strong>Scores:</strong> {scores_line}</span><br>'
             f'<span style="font-size: 0.9rem;"><strong>Values:</strong> {metrics_line}</span>'
@@ -251,6 +282,9 @@ def render_options_list_inline():
             meets_slo = rec.get("meets_slo", False)
             slo_value = 1 if meets_slo else 0
 
+            bench_m = rec.get("benchmark_metrics", {}) or {}
+            conf_level = bench_m.get("confidence_level", "benchmarked")
+
             table_data.append(
                 {
                     "category": cat_name,
@@ -262,6 +296,7 @@ def render_options_list_inline():
                     "balanced": balanced,
                     "slo": "Yes" if meets_slo else "No",
                     "slo_value": slo_value,
+                    "confidence": conf_level,
                 }
             )
 
@@ -433,6 +468,13 @@ def render_recommendation_result(result: dict, priority: str, extraction: dict):
     st.session_state.winner_recommendation = winner
     st.session_state.winner_priority = priority
     st.session_state.winner_extraction = extraction
+
+    # Display estimation warnings if any
+    estimation_warnings = ranked_response.get("warnings", []) if ranked_response else []
+    if estimation_warnings:
+        with st.expander(f"Estimation warnings ({len(estimation_warnings)})", expanded=False):
+            for warn in estimation_warnings:
+                st.warning(warn)
 
     st.markdown("---")
 

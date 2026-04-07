@@ -469,17 +469,17 @@ db-remove: db-stop ## Stop and remove PostgreSQL container
 
 db-load-blis: db-start ## Load BLIS benchmark data (appends)
 	@printf "$(BLUE)Loading BLIS benchmark data...$(NC)\n"
-	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_BLIS.json
+	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_BLIS.json --source blis --confidence-level benchmarked
 	@printf "$(GREEN)✓ BLIS data loaded$(NC)\n"
 
 db-load-estimated: db-start ## Load estimated performance benchmarks (appends)
 	@printf "$(BLUE)Loading estimated performance data...$(NC)\n"
-	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_estimated_performance.json
+	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_estimated_performance.json --source manual --confidence-level estimated
 	@printf "$(GREEN)✓ Estimated data loaded$(NC)\n"
 
 db-load-interpolated: db-start ## Load interpolated benchmark data (appends)
 	@printf "$(BLUE)Loading interpolated benchmark data...$(NC)\n"
-	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_interpolated_v2.json
+	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_interpolated_v2.json --source manual --confidence-level estimated
 	@printf "$(GREEN)✓ Interpolated data loaded$(NC)\n"
 
 db-load-guidellm: db-start ## Load GuideLLM benchmark data (appends)
@@ -489,7 +489,7 @@ db-load-guidellm: db-start ## Load GuideLLM benchmark data (appends)
 		printf "$(YELLOW)Run 'make db-convert-pgdump' first to create it from a pg_dump file$(NC)\n"; \
 		exit 1; \
 	fi
-	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_GuideLLM.json
+	@uv run python scripts/load_benchmarks.py data/benchmarks/performance/benchmarks_GuideLLM.json --source guidellm --confidence-level benchmarked
 	@printf "$(GREEN)✓ GuideLLM data loaded$(NC)\n"
 
 db-convert-pgdump: db-start ## Convert PostgreSQL dump to JSON format

@@ -178,7 +178,7 @@ class RecommendationWorkflow:
         # Detect cluster GPUs for filtering
         cluster_gpu_types = detect_cluster_gpus()
         logger.info("Generating all viable configurations")
-        all_configs = self.config_finder.plan_all_capacities(
+        all_configs, _warnings = self.config_finder.plan_all_capacities(
             traffic_profile=traffic_profile,
             slo_targets=slo_targets,
             intent=intent,
@@ -267,12 +267,14 @@ class RecommendationWorkflow:
         # Detect cluster GPUs for filtering
         cluster_gpu_types = detect_cluster_gpus()
         logger.info("Planning capacity for all model/GPU combinations")
-        all_configs = self.config_finder.plan_all_capacities(
+        all_configs, estimation_warnings = self.config_finder.plan_all_capacities(
             traffic_profile=traffic_profile,
             slo_targets=slo_targets,
             intent=intent,
             include_near_miss=include_near_miss,
             cluster_gpu_types=cluster_gpu_types,
+            preferred_models=intent.preferred_models if intent.preferred_models else None,
+            enable_estimated=True,
         )
 
         if not all_configs:
@@ -284,6 +286,7 @@ class RecommendationWorkflow:
                 specification=specification,
                 total_configs_evaluated=0,
                 configs_after_filters=0,
+                warnings=estimation_warnings,
             )
 
         # Generate ranked lists (top 10 solutions per criterion)
@@ -296,6 +299,7 @@ class RecommendationWorkflow:
             top_n=5,  # Top 5 accuracy models only
             weights=weights,
             use_case=intent.use_case,  # Task bonuses for Balanced
+            preferred_models=intent.preferred_models if intent.preferred_models else None,
         )
 
         # Count configs after filtering
@@ -318,6 +322,7 @@ class RecommendationWorkflow:
             balanced=ranked_lists["balanced"],
             total_configs_evaluated=len(all_configs),
             configs_after_filters=configs_after_filters,
+            warnings=estimation_warnings,
         )
 
     def generate_ranked_recommendations_from_spec(
@@ -327,6 +332,7 @@ class RecommendationWorkflow:
         max_cost: float | None = None,
         include_near_miss: bool = True,
         weights: dict[str, int] | None = None,
+        enable_estimated: bool = True,
     ) -> RankedRecommendationsResponse:
         """
         Generate ranked recommendation lists from pre-built specifications.
@@ -399,13 +405,15 @@ class RecommendationWorkflow:
         cluster_gpu_types = detect_cluster_gpus()
         logger.info("Planning capacity for all model/GPU combinations")
         logger.info(f"Using weights for balanced scoring: {weights}")
-        all_configs = self.config_finder.plan_all_capacities(
+        all_configs, estimation_warnings = self.config_finder.plan_all_capacities(
             traffic_profile=traffic_profile,
             slo_targets=slo_targets,
             intent=intent,
             include_near_miss=include_near_miss,
             weights=weights,
             cluster_gpu_types=cluster_gpu_types,
+            preferred_models=intent.preferred_models if intent.preferred_models else None,
+            enable_estimated=enable_estimated,
         )
 
         if not all_configs:
@@ -417,6 +425,7 @@ class RecommendationWorkflow:
                 specification=specification,
                 total_configs_evaluated=0,
                 configs_after_filters=0,
+                warnings=estimation_warnings,
             )
 
         # Generate ranked lists (top 10 solutions per criterion)
@@ -429,6 +438,7 @@ class RecommendationWorkflow:
             top_n=10,  # Top 10 accuracy models only
             weights=weights,
             use_case=intent.use_case,  # Task bonuses for Balanced
+            preferred_models=intent.preferred_models if intent.preferred_models else None,
         )
 
         # Count configs after filtering
@@ -451,4 +461,5 @@ class RecommendationWorkflow:
             balanced=ranked_lists["balanced"],
             total_configs_evaluated=len(all_configs),
             configs_after_filters=configs_after_filters,
+            warnings=estimation_warnings,
         )

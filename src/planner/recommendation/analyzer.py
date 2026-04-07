@@ -1,14 +1,7 @@
 """Ranking service for multi-criteria recommendation sorting.
 
-ACCURACY-FIRST STRATEGY:
-1. Get top N unique models by raw accuracy (quality baseline)
-2. Filter all hardware configs to only these high-quality models
-3. Best Latency/Cost/etc. are ranked WITHIN this quality tier
-
-This ensures:
-- All recommendations show HIGH QUALITY models
-- No "fast but useless" or "cheap but terrible" recommendations
-- Cards show different trade-offs within the same quality tier
+Each card (Best Accuracy, Lowest Cost, Best Latency, Simplest, Balanced)
+ranks ALL filtered configurations independently by its own criterion.
 
 TASK-SPECIFIC BONUSES (Balanced card only):
 - Different model types get bonuses for specific use cases
@@ -157,16 +150,10 @@ class Analyzer:
         top_n: int = 5,
         weights: dict[str, int] | None = None,
         use_case: str | None = None,
+        preferred_models: list[str] | None = None,
     ) -> dict[str, list[DeploymentRecommendation]]:
         """
-        Generate 5 ranked lists using ACCURACY-FIRST strategy.
-
-        Strategy:
-        1. Get top N unique models by raw accuracy (quality baseline)
-        2. Filter ALL hardware configs to only these high-quality models
-        3. Best Latency = fastest hardware among high-quality models
-        4. Best Cost = cheapest hardware among high-quality models
-        5. Balanced = best weighted score among high-quality models
+        Generate 5 ranked lists, each sorted independently by its criterion.
 
         Args:
             configurations: List of scored DeploymentRecommendations
@@ -175,17 +162,14 @@ class Analyzer:
             top_n: Number of top configurations to return per list
             weights: Optional custom weights for balanced score (0-10 scale)
                      Keys: accuracy, price, latency, complexity
+            use_case: Use case identifier (unused, kept for API compatibility)
+            preferred_models: User-specified models that bypass min_accuracy filter
 
         Returns:
             Dict with keys: best_accuracy, lowest_cost, lowest_latency,
                            simplest, balanced
         """
-        # Apply filters
-        filtered = self._apply_filters(configurations, min_accuracy, max_cost)
-
-        # # Recalculate balanced scores with custom weights and task bonuses
-        # if filtered:
-        #     self._recalculate_balanced_scores(filtered, weights or {}, use_case)
+        filtered = self._apply_filters(configurations, min_accuracy, max_cost, preferred_models)
 
         if not filtered:
             logger.warning("No configurations remain after filtering")
@@ -197,17 +181,10 @@ class Analyzer:
                 "balanced": [],
             }
 
-        # =====================================================================
-        # STEP 1: Get top N UNIQUE MODELS by raw accuracy (quality baseline)
-        # Tie-breakers follow priority order: Accuracy → Cost → Latency → Complexity
-        # =====================================================================
-
-        # Helper functions for sort keys (higher score = better, lower cost = better)
         def get_accuracy(x):
             return x.scores.accuracy_score if x.scores else 0
 
         def get_cost_inverted(x):
-            # Invert cost so lower cost sorts higher (better)
             cost = x.cost_per_month_usd or float("inf")
             return -cost
 
@@ -220,20 +197,14 @@ class Analyzer:
         def get_balanced(x):
             return x.scores.balanced_score if x.scores else 0.0
 
-        seen_models = set()
-        unique_accuracy_configs = []
-        # Primary: Accuracy, Tie-breakers: Cost → Latency → Complexity
+        # Best Accuracy: deduplicate by model (one config per model)
+        seen_models: set[str] = set()
+        unique_accuracy_configs: list[DeploymentRecommendation] = []
         sorted_by_accuracy = sorted(
             filtered,
-            key=lambda x: (
-                get_accuracy(x),
-                get_cost_inverted(x),
-                get_latency(x),
-                get_complexity(x),
-            ),
+            key=lambda x: (get_accuracy(x), get_cost_inverted(x), get_latency(x)),
             reverse=True,
         )
-
         for config in sorted_by_accuracy:
             model_name = config.model_name or config.model_id or "Unknown"
             if model_name not in seen_models:
@@ -242,85 +213,33 @@ class Analyzer:
                 if len(unique_accuracy_configs) >= top_n:
                     break
 
-        # Get the model names of top accuracy models
-        top_accuracy_model_names = {c.model_name or c.model_id for c in unique_accuracy_configs}
-
-        logger.info(
-            f"ACCURACY-FIRST: Top {len(top_accuracy_model_names)} models by accuracy: "
-            f"{list(top_accuracy_model_names)[:5]}"
-        )
-
-        # =====================================================================
-        # STEP 2: Filter ALL configs to only high-quality models
-        # This ensures Best Latency and Best Cost show HIGH QUALITY models
-        # =====================================================================
-        high_quality_configs = [
-            c for c in filtered if (c.model_name or c.model_id) in top_accuracy_model_names
-        ]
-
-        logger.info(
-            f"ACCURACY-FIRST: {len(high_quality_configs)} configs from top {len(top_accuracy_model_names)} models"
-        )
-
-        # =====================================================================
-        # STEP 3: Generate ranked lists from HIGH-QUALITY configs only
-        # Tie-breaker order: Accuracy → Cost → Latency → Complexity
-        # Each list excludes its primary criterion from tie-breakers
-        # =====================================================================
         ranked_lists = {
-            # Best Accuracy: Top N unique models (one config per model)
-            # Already sorted with tie-breakers: Cost → Latency → Complexity
             "best_accuracy": unique_accuracy_configs[:top_n],
-            # Best Cost: Primary=Cost, Tie-breakers: Accuracy → Latency → Complexity
             "lowest_cost": sorted(
-                high_quality_configs,
-                key=lambda x: (
-                    get_cost_inverted(x),
-                    get_accuracy(x),
-                    get_latency(x),
-                    get_complexity(x),
-                ),
+                filtered,
+                key=lambda x: (get_cost_inverted(x), get_accuracy(x), get_latency(x)),
                 reverse=True,
             )[:top_n],
-            # Best Latency: Primary=Latency, Tie-breakers: Accuracy → Cost → Complexity
             "lowest_latency": sorted(
-                high_quality_configs,
-                key=lambda x: (
-                    get_latency(x),
-                    get_accuracy(x),
-                    get_cost_inverted(x),
-                    get_complexity(x),
-                ),
+                filtered,
+                key=lambda x: (get_latency(x), get_accuracy(x), get_cost_inverted(x)),
                 reverse=True,
             )[:top_n],
-            # Simplest: Primary=Complexity, Tie-breakers: Accuracy → Cost → Latency
             "simplest": sorted(
-                high_quality_configs,
-                key=lambda x: (
-                    get_complexity(x),
-                    get_accuracy(x),
-                    get_cost_inverted(x),
-                    get_latency(x),
-                ),
+                filtered,
+                key=lambda x: (get_complexity(x), get_accuracy(x), get_cost_inverted(x)),
                 reverse=True,
             )[:top_n],
-            # Balanced: Primary=Balanced, Tie-breakers: Accuracy → Cost → Latency → Complexity
             "balanced": sorted(
-                high_quality_configs,
-                key=lambda x: (
-                    get_balanced(x),
-                    get_accuracy(x),
-                    get_cost_inverted(x),
-                    get_latency(x),
-                    get_complexity(x),
-                ),
+                filtered,
+                key=lambda x: (get_balanced(x), get_accuracy(x), get_cost_inverted(x)),
                 reverse=True,
             )[:top_n],
         }
 
         logger.info(
-            f"Generated ranked lists (ACCURACY-FIRST): {len(filtered)} total configs, "
-            f"{len(high_quality_configs)} high-quality, top {top_n} per criterion"
+            f"Generated ranked lists: {len(filtered)} filtered configs, "
+            f"top {top_n} per criterion"
         )
 
         return ranked_lists
@@ -330,6 +249,7 @@ class Analyzer:
         configs: list[DeploymentRecommendation],
         min_accuracy: int | None,
         max_cost: float | None,
+        preferred_models: list[str] | None = None,
     ) -> list[DeploymentRecommendation]:
         """
         Apply accuracy and cost filters to configurations.
@@ -338,15 +258,22 @@ class Analyzer:
             configs: List of configurations to filter
             min_accuracy: Minimum accuracy score (0-100), None = no filter
             max_cost: Maximum monthly cost (USD), None = no filter
+            preferred_models: User-specified models that bypass min_accuracy filter
 
         Returns:
             Filtered list of configurations
         """
         filtered = configs
 
-        # Filter by minimum accuracy
+        # Filter by minimum accuracy — exempt user-specified preferred models
         if min_accuracy is not None and min_accuracy > 0:
-            filtered = [c for c in filtered if c.scores and c.scores.accuracy_score >= min_accuracy]
+            preferred_set = {m.lower() for m in preferred_models} if preferred_models else set()
+            filtered = [
+                c
+                for c in filtered
+                if (c.scores and c.scores.accuracy_score >= min_accuracy)
+                or (c.model_id and c.model_id.lower() in preferred_set)
+            ]
             logger.debug(f"After min_accuracy={min_accuracy} filter: {len(filtered)} configs")
 
         # Filter by maximum cost

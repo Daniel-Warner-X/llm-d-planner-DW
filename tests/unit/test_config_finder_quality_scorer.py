@@ -118,7 +118,7 @@ def test_injected_scorer_used_in_plan_all_capacities():
         quality_scorer=mock_scorer,
     )
 
-    results = finder.plan_all_capacities(
+    results, _warnings = finder.plan_all_capacities(
         traffic_profile=_make_traffic(),
         slo_targets=_make_slo(),
         intent=_make_intent(),
@@ -158,7 +158,7 @@ def test_default_scorer_used_when_none_injected():
         "planner.recommendation.quality.score_model_quality",
         return_value=60.0,
     ) as mock_default:
-        results = finder.plan_all_capacities(
+        results, _warnings = finder.plan_all_capacities(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             intent=_make_intent(),
@@ -196,7 +196,7 @@ def test_injected_scorer_fallback_on_zero():
         quality_scorer=mock_scorer,
     )
 
-    results = finder.plan_all_capacities(
+    results, _warnings = finder.plan_all_capacities(
         traffic_profile=_make_traffic(),
         slo_targets=_make_slo(),
         intent=_make_intent(),

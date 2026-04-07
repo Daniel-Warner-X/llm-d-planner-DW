@@ -62,6 +62,18 @@ def render_configuration_tab():
 
     st.divider()
 
+    # --- Estimated Performance ---
+    st.subheader("Estimated Performance")
+    st.toggle(
+        "Enable estimated performance for models without benchmarks",
+        value=st.session_state.get("enable_estimated", True),
+        key="enable_estimated",
+        help="When enabled, the roofline model generates synthetic performance estimates "
+        "for model/GPU combinations that lack benchmark data.",
+    )
+
+    st.divider()
+
     # --- Benchmark Database ---
     st.subheader("Benchmark Database")
 

@@ -161,14 +161,16 @@ class Scorer:
                 return int(quality_score)
 
         # Fallback to size-based heuristic (Andre's original logic)
-        return self._score_accuracy_by_size(model_size_str)
+        return self.score_accuracy_by_size(model_size_str)
 
-    def _score_accuracy_by_size(self, model_size_str: str) -> int:
+    def score_accuracy_by_size(self, model_size_str: str) -> int:
         """
         Score model accuracy based on parameter count tier (fallback).
 
         Args:
-            model_size_str: Model size string (e.g., "8B", "70B", "8x7B")
+            model_size_str: Model size or HuggingFace model ID containing a
+                size pattern (e.g., "8B", "70B", "8x7B",
+                "meta-llama/Llama-3.3-70B-Instruct").
 
         Returns:
             Score 0-100

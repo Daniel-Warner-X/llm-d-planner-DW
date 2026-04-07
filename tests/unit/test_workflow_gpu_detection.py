@@ -42,7 +42,7 @@ class TestWorkflowGPUDetection:
         self, mock_config_finder, mock_detect
     ):
         mock_finder = mock_config_finder.return_value
-        mock_finder.plan_all_capacities.return_value = []
+        mock_finder.plan_all_capacities.return_value = ([], [])
 
         from planner.orchestration.workflow import RecommendationWorkflow
 
@@ -72,7 +72,7 @@ class TestWorkflowGPUDetection:
 
         mock_finder = mock_config_finder.return_value
         # Return a list with at least one config to avoid early return path
-        mock_finder.plan_all_capacities.return_value = [MagicMock()]
+        mock_finder.plan_all_capacities.return_value = ([MagicMock()], [])
 
         # Mock Analyzer to avoid complex schema validation
         mock_analyzer = mock_analyzer_cls.return_value
@@ -110,7 +110,7 @@ class TestWorkflowGPUDetection:
     @patch("planner.orchestration.workflow.ConfigFinder")
     def test_generate_ranked_from_spec_calls_detector(self, mock_config_finder, mock_detect):
         mock_finder = mock_config_finder.return_value
-        mock_finder.plan_all_capacities.return_value = []
+        mock_finder.plan_all_capacities.return_value = ([], [])
 
         from planner.orchestration.workflow import RecommendationWorkflow
 
@@ -125,7 +125,7 @@ class TestWorkflowGPUDetection:
     @patch("planner.orchestration.workflow.ConfigFinder")
     def test_empty_detection_passes_empty_list(self, mock_config_finder, mock_detect):
         mock_finder = mock_config_finder.return_value
-        mock_finder.plan_all_capacities.return_value = []
+        mock_finder.plan_all_capacities.return_value = ([], [])
 
         from planner.orchestration.workflow import RecommendationWorkflow
 

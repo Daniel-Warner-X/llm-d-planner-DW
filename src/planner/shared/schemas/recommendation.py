@@ -149,3 +149,9 @@ class RankedRecommendationsResponse(BaseModel):
     configs_after_filters: int = Field(
         default=0, description="Number of configurations after applying filters"
     )
+
+    # Warnings from estimated performance flow
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Warnings from estimated performance (e.g., unsupported model architectures)",
+    )

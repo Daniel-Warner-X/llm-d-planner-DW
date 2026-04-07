@@ -407,12 +407,34 @@ def render_slo_cards(use_case: str, user_count: int):
         _render_priorities()
 
 
+def _render_constraints(extraction: dict):
+    """Render GPU and model constraints if any are set."""
+    gpu_types = extraction.get("preferred_gpu_types", [])
+    models = extraction.get("preferred_models", []) or st.session_state.get("preferred_models", [])
+
+    if not gpu_types and not models:
+        return
+
+    parts = []
+    if gpu_types:
+        parts.append(f"**GPUs:** {', '.join(gpu_types)}")
+    else:
+        parts.append("**GPUs:** Any")
+    if models:
+        parts.append(f"**Models:** {', '.join(models)}")
+    else:
+        parts.append("**Models:** Any")
+
+    st.markdown(" &nbsp;|&nbsp; ".join(parts))
+
+
 def render_slo_with_approval(extraction: dict):
     """Render SLO section with approval to proceed to recommendations."""
     use_case = extraction.get("use_case", "chatbot_conversational")
     user_count = extraction.get("user_count", 1000)
 
     render_slo_cards(use_case, user_count)
+    _render_constraints(extraction)
 
     # Validate SLO values
     slo_defaults = fetch_slo_defaults(use_case)

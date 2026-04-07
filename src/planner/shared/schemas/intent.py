@@ -38,6 +38,12 @@ class DeploymentIntent(BaseModel):
         "Canonical names: L4, A100-40, A100-80, H100, H200, B200",
     )
 
+    preferred_models: list[str] = Field(
+        default_factory=list,
+        description="List of user's preferred model IDs (HuggingFace format, empty = any model). "
+        "Can be catalog model_ids or arbitrary HF repo IDs.",
+    )
+
     # Priority hints extracted from natural language (used for weight calculation)
     accuracy_priority: Literal["low", "medium", "high"] = Field(
         default="medium", description="Accuracy/quality importance"

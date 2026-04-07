@@ -215,18 +215,24 @@ class KVCacheDetail:
 
 
 # Model
+
+
+@lru_cache(maxsize=128)
 def get_model_info_from_hf(model_name: str, hf_token: str | None = None) -> ModelInfo:
     """
-    Fetches model info from HF, does not handle error
+    Fetches model info from HF, does not handle error.
+    Results are cached to avoid repeated API calls for the same model.
     """
     api = HfApi(token=hf_token)
     model_info = api.model_info(model_name)
     return model_info
 
 
+@lru_cache(maxsize=128)
 def get_model_config_from_hf(model_name: str, hf_token: str | None = None) -> Any:
     """
-    Returns LLM model config
+    Returns LLM model config.
+    Results are cached to avoid repeated API calls for the same model.
     """
 
     model_config = AutoConfig.from_pretrained(
@@ -907,6 +913,46 @@ def allocatable_kv_cache_memory(
     total_consumed = model_size + activation_memory + cuda_graph_memory + non_torch_memory
 
     return max(0, available_memory - total_consumed)
+
+
+def check_model_fits_gpu(
+    model_name: str,
+    model_config: AutoConfig,
+    gpu_memory_gb: int,
+    gpu_util: float = 0.9,
+    hf_token: str | None = None,
+) -> list[int]:
+    """
+    Check which tensor parallelism (TP) values allow the model to fit on the GPU.
+
+    Iterates through architecturally valid TP values and checks whether the
+    model leaves positive allocatable KV cache memory at each TP degree.
+
+    Args:
+        model_name: HuggingFace model ID
+        model_config: Model configuration from AutoConfig
+        gpu_memory_gb: GPU memory in GB (from gpu_catalog.json memory_gb field)
+        gpu_util: GPU memory utilization factor (default 0.9)
+        hf_token: Optional HuggingFace token for gated models
+
+    Returns:
+        Sorted list of valid TP values where the model fits (allocatable
+        KV cache memory > 0). Empty list means the model does not fit
+        on this GPU at any TP.
+    """
+    valid_tps = []
+    for tp in find_possible_tp(model_config):
+        available = allocatable_kv_cache_memory(
+            model_name,
+            model_config,
+            gpu_memory_gb,
+            gpu_util,
+            tp=tp,
+            hf_token=hf_token,
+        )
+        if available > 0:
+            valid_tps.append(tp)
+    return valid_tps
 
 
 def auto_max_model_len(

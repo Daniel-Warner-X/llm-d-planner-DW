@@ -147,6 +147,22 @@ def fetch_priority_weights() -> dict | None:
 
 
 @st.cache_data(ttl=3600)
+def fetch_catalog_model_ids() -> list[str]:
+    """Fetch model IDs from the model catalog API.
+
+    Returns sorted list of model_id strings (e.g., "meta-llama/Llama-3.1-8B-Instruct").
+    """
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/v1/models", timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        return sorted(m["model_id"] for m in data.get("models", []) if m.get("model_id"))
+    except Exception as e:
+        logger.warning(f"Failed to fetch catalog models: {e}")
+        return []
+
+
+@st.cache_data(ttl=3600)
 def fetch_gpu_types() -> dict[str, dict]:
     """Fetch all GPU types from the API, keyed by canonical gpu_type name.
 
@@ -323,6 +339,8 @@ def fetch_ranked_recommendations(
     include_near_miss: bool = False,
     percentile: str = "p95",
     preferred_gpu_types: list[str] | None = None,
+    preferred_models: list[str] | None = None,
+    enable_estimated: bool = True,
 ) -> dict | None:
     """Fetch ranked recommendations from the backend API.
 
@@ -339,12 +357,13 @@ def fetch_ranked_recommendations(
         include_near_miss: Whether to include near-SLO configurations
         percentile: Which percentile to use for SLO comparison (mean, p90, p95, p99)
         preferred_gpu_types: Optional list of GPU types to filter by (empty = any GPU)
+        preferred_models: Optional list of HuggingFace model IDs to include via estimation
+        enable_estimated: Whether to run roofline estimation for missing benchmarks
 
     Returns:
         RankedRecommendationsResponse as dict, or None on error
     """
     # Build request payload
-    # min_accuracy=35 filters out models with 30% fallback (no AA data)
     payload = {
         "use_case": use_case,
         "user_count": user_count,
@@ -356,8 +375,9 @@ def fetch_ranked_recommendations(
         "e2e_target_ms": e2e_target_ms,
         "percentile": percentile,
         "include_near_miss": include_near_miss,
-        "min_accuracy": 35,
         "preferred_gpu_types": preferred_gpu_types or [],
+        "preferred_models": preferred_models or [],
+        "enable_estimated": enable_estimated,
     }
 
     if weights:
@@ -367,7 +387,7 @@ def fetch_ranked_recommendations(
         response = requests.post(
             f"{API_BASE_URL}/api/v1/ranked-recommend-from-spec",
             json=payload,
-            timeout=30,
+            timeout=90,  # Backend estimation timeout (60s default) + buffer
         )
         response.raise_for_status()
         return cast(dict[Any, Any], response.json())
