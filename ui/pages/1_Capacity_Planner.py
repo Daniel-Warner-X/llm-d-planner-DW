@@ -17,6 +17,38 @@ from api_client import (
 from matplotlib import pyplot as plt
 
 
+def _cached_calculate(
+    model_name: str,
+    max_model_len: int | None = None,
+    batch_size: int = 1,
+    gpu_memory: float | None = None,
+    gpu_mem_util: float = 0.9,
+    tp: int = 1,
+    pp: int = 1,
+    dp: int = 1,
+) -> dict | None:
+    """Call fetch_capacity_planner_calculate with session-state caching.
+
+    Each unique combination of parameters is fetched at most once per Streamlit
+    render cycle, avoiding redundant HuggingFace round-trips when the same
+    parameters appear in multiple UI sections.
+    """
+    cache_key = (model_name, max_model_len, batch_size, gpu_memory, gpu_mem_util, tp, pp, dp)
+    cache: dict = st.session_state.setdefault("_calc_cache", {})
+    if cache_key not in cache:
+        cache[cache_key] = fetch_capacity_planner_calculate(
+            model_name,
+            max_model_len=max_model_len,
+            batch_size=batch_size,
+            gpu_memory=gpu_memory,
+            gpu_mem_util=gpu_mem_util,
+            tp=tp,
+            pp=pp,
+            dp=dp,
+        )
+    return cache[cache_key]
+
+
 def _load_gpu_specs_fallback() -> dict[str, dict]:
     """Load GPU specs from gpu_catalog.json when the backend API is unavailable."""
     catalog_path = (
@@ -67,6 +99,8 @@ def model_specification():
 
         # Fetch when user changes model
         if selected_model and selected_model != st.session_state.get("_last_model_id"):
+            # Reset the top-level pre-fetch guard so the new model can be attempted there too
+            st.session_state.pop("_model_info_fetch_attempted", None)
             model_info = fetch_capacity_planner_model_info(selected_model)
             if model_info:
                 st.session_state["model_info_response"] = model_info
@@ -225,7 +259,7 @@ def workload_specification():
         )
 
         if auto_max_model_len_checked:
-            calc_result = fetch_capacity_planner_calculate(
+            calc_result = _cached_calculate(
                 user_scenario.model_name,
                 max_model_len=-1,
                 gpu_memory=user_scenario.get_gpu_memory(gpu_specs),
@@ -270,7 +304,7 @@ def workload_specification():
             args=[util.SELECTED_CONCURRENCY_KEY, "concurrency"],
         )
 
-        calc_result = fetch_capacity_planner_calculate(
+        calc_result = _cached_calculate(
             user_scenario.model_name,
             max_model_len=user_scenario.max_model_len,
             batch_size=user_scenario.concurrency,
@@ -456,7 +490,7 @@ def hardware_specification():
         if selected_gpu_name:
             gpu_memory = user_scenario.get_gpu_memory(gpu_specs)
 
-            calc_result = fetch_capacity_planner_calculate(
+            calc_result = _cached_calculate(
                 user_scenario.model_name,
                 max_model_len=user_scenario.max_model_len,
                 batch_size=user_scenario.concurrency,
@@ -691,10 +725,15 @@ st.caption(
 util.init_session_state()
 gpu_specs = fetch_gpu_types() or _load_gpu_specs_fallback()
 
-# Pre-fetch model info for the default/current model if not already cached
-if not st.session_state.get("model_info_response"):
+# Pre-fetch model info for the default/current model if not already cached.
+# The _model_info_fetch_attempted guard prevents an infinite rerun loop when
+# the backend is unavailable or the fetch consistently returns None.
+if not st.session_state.get("model_info_response") and not st.session_state.get(
+    "_model_info_fetch_attempted"
+):
     _current_model = st.session_state.get(util.SELECTED_MODEL_KEY, "")
     if _current_model:
+        st.session_state["_model_info_fetch_attempted"] = True
         with st.spinner(f"Loading model info for `{_current_model}`..."):
             _model_info = fetch_capacity_planner_model_info(_current_model)
         if _model_info:

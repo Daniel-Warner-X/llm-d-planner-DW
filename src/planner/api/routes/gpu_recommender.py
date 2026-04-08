@@ -1,31 +1,18 @@
 """GPU recommender endpoint."""
 
 import logging
-from typing import Any, NoReturn
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from llm_optimizer.predefined.gpus import GPU_SPECS
 from pydantic import BaseModel
 
+from planner.api.routes.common import handle_hf_error
 from planner.gpu_recommender import GPURecommender
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["gpu-recommender"])
-
-
-def _handle_hf_error(e: Exception) -> NoReturn:
-    """Raise the appropriate HTTPException for HuggingFace errors."""
-    msg = str(e).lower()
-    if "gated" in msg or "403" in msg or "unauthorized" in msg:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Model is gated. Set HF_TOKEN on the backend: {e}",
-        )
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=str(e),
-    )
 
 
 class EstimateRequest(BaseModel):
@@ -76,7 +63,14 @@ async def estimate(request: EstimateRequest) -> EstimateResponse:
         _, failed_gpus = recommender.get_gpu_results()
         performance_summary = recommender.get_performance_summary()
     except Exception as e:
-        _handle_hf_error(e)
+        msg = str(e).lower()
+        if "gated" in msg or "403" in msg or "unauthorized" in msg:
+            handle_hf_error(e)
+        logger.exception("Unexpected error during GPU estimation for model %s", request.model_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during GPU estimation.",
+        ) from e
 
     input_params: dict[str, Any] = {
         "model": request.model_id,
