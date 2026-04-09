@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from planner.recommendation.config_finder import ConfigFinder
+from planner.recommendation.estimator import generate_estimated_configs
 from planner.shared.schemas import SLOTargets, TrafficProfile
 
 
@@ -44,19 +45,19 @@ class TestEstimatedPerformanceIntegration:
         mock_catalog.get_all_gpu_types.return_value = [gpu_h100]
         mock_catalog.get_all_models.return_value = []
 
-        self.finder = ConfigFinder(
-            benchmark_repo=mock_repo,
-            catalog=mock_catalog,
-        )
+        self.mock_repo = mock_repo
+        self.mock_catalog = mock_catalog
 
     def test_small_model_produces_estimate(self):
         """Qwen2.5-0.5B on H100 should produce a valid estimated benchmark."""
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["Qwen/Qwen2.5-0.5B"],
             existing_benchmarks=[],
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         # Filter out non-blocking warnings (e.g., DB persistence failures)
@@ -86,12 +87,14 @@ class TestEstimatedPerformanceIntegration:
 
     def test_nonexistent_model_produces_warning(self):
         """A model ID that doesn't exist on HuggingFace should warn, not crash."""
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["nonexistent-org/this-model-does-not-exist-12345"],
             existing_benchmarks=[],
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         assert len(results) == 0
@@ -135,12 +138,14 @@ class TestEstimatedPerformanceIntegration:
             }
         )
 
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["Qwen/Qwen2.5-0.5B"],
             existing_benchmarks=[existing],
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         # TP=1 is covered — it should not appear in results.

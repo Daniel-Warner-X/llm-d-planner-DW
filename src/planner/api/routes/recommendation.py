@@ -68,7 +68,7 @@ class RankedRecommendationFromSpecRequest(BaseModel):
 
 
 @router.post("/recommend")
-async def simple_recommend(
+def simple_recommend(
     request: SimpleRecommendationRequest,
     workflow: RecommendationWorkflow = Depends(get_workflow),
     deployment_generator: DeploymentGenerator = Depends(get_deployment_generator),
@@ -160,7 +160,7 @@ async def simple_recommend(
 
 
 @router.post("/ranked-recommend-from-spec")
-async def ranked_recommend_from_spec(
+def ranked_recommend_from_spec(
     request: RankedRecommendationFromSpecRequest,
     workflow: RecommendationWorkflow = Depends(get_workflow),
 ):

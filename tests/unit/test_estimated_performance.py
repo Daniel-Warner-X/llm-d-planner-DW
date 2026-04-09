@@ -6,6 +6,11 @@ import pytest
 
 from planner.knowledge_base.benchmarks import BenchmarkData
 from planner.recommendation.config_finder import ConfigFinder
+from planner.recommendation.estimator import (
+    CATALOG_TO_ROOFLINE_GPU,
+    convert_estimation_to_benchmark,
+    generate_estimated_configs,
+)
 from planner.shared.schemas import DeploymentIntent, SLOTargets, TrafficProfile
 
 
@@ -87,10 +92,10 @@ def _make_benchmark_data(
 
 @pytest.mark.unit
 class TestConvertEstimationToBenchmark:
-    """Test _convert_estimation_to_benchmark() static method."""
+    """Test convert_estimation_to_benchmark() function."""
 
     def test_basic_conversion(self):
-        bench = ConfigFinder._convert_estimation_to_benchmark(
+        bench = convert_estimation_to_benchmark(
             model_id="meta-llama/Llama-3.3-70B-Instruct",
             gpu_type="H100",
             gpu_count=2,
@@ -112,7 +117,7 @@ class TestConvertEstimationToBenchmark:
         assert bench.framework_version == "estimated"
 
     def test_same_value_all_percentiles(self):
-        bench = ConfigFinder._convert_estimation_to_benchmark(
+        bench = convert_estimation_to_benchmark(
             model_id="test/model",
             gpu_type="A100-80",
             gpu_count=1,
@@ -131,7 +136,7 @@ class TestConvertEstimationToBenchmark:
         assert bench.tps_mean == bench.tps_p90 == bench.tps_p95 == bench.tps_p99 == 100.0
 
     def test_requests_per_second_calculation(self):
-        bench = ConfigFinder._convert_estimation_to_benchmark(
+        bench = convert_estimation_to_benchmark(
             model_id="test/model",
             gpu_type="H100",
             gpu_count=1,
@@ -148,7 +153,7 @@ class TestConvertEstimationToBenchmark:
 
     def test_zero_output_tokens(self):
         """RPS should be 0 when output_tokens is 0 (avoid division by zero)."""
-        bench = ConfigFinder._convert_estimation_to_benchmark(
+        bench = convert_estimation_to_benchmark(
             model_id="test/model",
             gpu_type="H100",
             gpu_count=1,
@@ -163,7 +168,7 @@ class TestConvertEstimationToBenchmark:
         assert bench.requests_per_second == 0.0
 
     def test_traffic_profile_fields(self):
-        bench = ConfigFinder._convert_estimation_to_benchmark(
+        bench = convert_estimation_to_benchmark(
             model_id="test/model",
             gpu_type="L40",
             gpu_count=1,
@@ -182,7 +187,7 @@ class TestConvertEstimationToBenchmark:
 
     def test_to_dict_round_trip(self):
         """Converted benchmark should produce a valid dict via to_dict()."""
-        bench = ConfigFinder._convert_estimation_to_benchmark(
+        bench = convert_estimation_to_benchmark(
             model_id="test/model",
             gpu_type="H100",
             gpu_count=1,
@@ -203,26 +208,26 @@ class TestConvertEstimationToBenchmark:
 
 @pytest.mark.unit
 class TestCatalogToRooflineGPUMapping:
-    """Test the _CATALOG_TO_ROOFLINE_GPU mapping."""
+    """Test the CATALOG_TO_ROOFLINE_GPU mapping."""
 
     def test_h100_maps(self):
-        assert ConfigFinder._CATALOG_TO_ROOFLINE_GPU["H100"] == "H100"
+        assert CATALOG_TO_ROOFLINE_GPU["H100"] == "H100"
 
     def test_a100_80_maps_to_a100(self):
-        assert ConfigFinder._CATALOG_TO_ROOFLINE_GPU["A100-80"] == "A100"
+        assert CATALOG_TO_ROOFLINE_GPU["A100-80"] == "A100"
 
     def test_a100_40_maps(self):
-        assert ConfigFinder._CATALOG_TO_ROOFLINE_GPU["A100-40"] == "A100-40GB"
+        assert CATALOG_TO_ROOFLINE_GPU["A100-40"] == "A100-40GB"
 
     def test_unsupported_gpu_not_in_map(self):
-        assert "L4" not in ConfigFinder._CATALOG_TO_ROOFLINE_GPU
-        assert "A10G" not in ConfigFinder._CATALOG_TO_ROOFLINE_GPU
-        assert "MI300X" not in ConfigFinder._CATALOG_TO_ROOFLINE_GPU
+        assert "L4" not in CATALOG_TO_ROOFLINE_GPU
+        assert "A10G" not in CATALOG_TO_ROOFLINE_GPU
+        assert "MI300X" not in CATALOG_TO_ROOFLINE_GPU
 
 
 @pytest.mark.unit
 class TestGenerateEstimatedConfigs:
-    """Test _generate_estimated_configs() orchestration."""
+    """Test generate_estimated_configs() orchestration."""
 
     def setup_method(self):
         self.mock_repo = MagicMock()
@@ -244,9 +249,9 @@ class TestGenerateEstimatedConfigs:
             catalog=self.mock_catalog,
         )
 
-    @patch("planner.recommendation.config_finder.GPURecommender")
-    @patch("planner.recommendation.config_finder.get_model_config_from_hf")
-    @patch("planner.recommendation.config_finder.check_model_fits_gpu")
+    @patch("planner.recommendation.estimator.GPURecommender")
+    @patch("planner.recommendation.estimator.get_model_config_from_hf")
+    @patch("planner.recommendation.estimator.check_model_fits_gpu")
     def test_skips_covered_combinations(self, mock_fits, mock_config, mock_recommender_cls):
         """Models already in existing_benchmarks at all valid TPs should be skipped."""
         mock_config.return_value = MagicMock()
@@ -262,21 +267,23 @@ class TestGenerateEstimatedConfigs:
             ),
         ]
 
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["meta-llama/Llama-3.1-8B-Instruct"],
             existing_benchmarks=existing,
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         # Both TP values are covered — no estimation should run
         assert len(results) == 0
         mock_recommender_cls.assert_not_called()
 
-    @patch("planner.recommendation.config_finder.GPURecommender")
-    @patch("planner.recommendation.config_finder.get_model_config_from_hf")
-    @patch("planner.recommendation.config_finder.check_model_fits_gpu")
+    @patch("planner.recommendation.estimator.GPURecommender")
+    @patch("planner.recommendation.estimator.get_model_config_from_hf")
+    @patch("planner.recommendation.estimator.check_model_fits_gpu")
     def test_generates_for_uncovered_model(self, mock_fits, mock_config, mock_recommender_cls):
         """Uncovered model/GPU pairs should get roofline estimates."""
         mock_config.return_value = MagicMock()
@@ -298,12 +305,14 @@ class TestGenerateEstimatedConfigs:
         )
         mock_recommender_cls.return_value = mock_recommender
 
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["meta-llama/Llama-3.3-70B-Instruct"],
             existing_benchmarks=[],
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         assert len(results) == 1
@@ -317,9 +326,9 @@ class TestGenerateEstimatedConfigs:
         assert bench.ttft_p95 == 200.0
         assert bench.e2e_p95 == 5000.0  # 5.0s * 1000
 
-    @patch("planner.recommendation.config_finder.GPURecommender")
-    @patch("planner.recommendation.config_finder.get_model_config_from_hf")
-    @patch("planner.recommendation.config_finder.check_model_fits_gpu")
+    @patch("planner.recommendation.estimator.GPURecommender")
+    @patch("planner.recommendation.estimator.get_model_config_from_hf")
+    @patch("planner.recommendation.estimator.check_model_fits_gpu")
     def test_generates_estimates_for_all_valid_tps(
         self, mock_fits, mock_config, mock_recommender_cls
     ):
@@ -343,12 +352,14 @@ class TestGenerateEstimatedConfigs:
         )
         mock_recommender_cls.return_value = mock_recommender
 
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["meta-llama/Llama-3.1-8B-Instruct"],
             existing_benchmarks=[],
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         assert len(results) == 3
@@ -364,9 +375,9 @@ class TestGenerateEstimatedConfigs:
         )
         assert called_max_gpus == [1, 2, 4]
 
-    @patch("planner.recommendation.config_finder.GPURecommender")
-    @patch("planner.recommendation.config_finder.get_model_config_from_hf")
-    @patch("planner.recommendation.config_finder.check_model_fits_gpu")
+    @patch("planner.recommendation.estimator.GPURecommender")
+    @patch("planner.recommendation.estimator.get_model_config_from_hf")
+    @patch("planner.recommendation.estimator.check_model_fits_gpu")
     def test_skips_covered_tp_estimates_uncovered(
         self, mock_fits, mock_config, mock_recommender_cls
     ):
@@ -396,47 +407,53 @@ class TestGenerateEstimatedConfigs:
         )
         mock_recommender_cls.return_value = mock_recommender
 
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["meta-llama/Llama-3.1-8B-Instruct"],
             existing_benchmarks=existing,
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         # Only TP=2 should be estimated (TP=1 is covered)
         assert len(results) == 1
         assert results[0].hardware_count == 2
 
-    @patch("planner.recommendation.config_finder.get_model_config_from_hf")
-    @patch("planner.recommendation.config_finder.check_model_fits_gpu")
+    @patch("planner.recommendation.estimator.get_model_config_from_hf")
+    @patch("planner.recommendation.estimator.check_model_fits_gpu")
     def test_model_fits_no_gpu_warning(self, mock_fits, mock_config):
         """Model that fits no GPUs should produce a warning."""
         mock_config.return_value = MagicMock()
         mock_fits.return_value = []  # Model doesn't fit
 
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["huge/model-that-doesnt-fit"],
             existing_benchmarks=[],
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         assert len(results) == 0
         assert any("does not fit" in w for w in warnings)
 
-    @patch("planner.recommendation.config_finder.get_model_config_from_hf")
+    @patch("planner.recommendation.estimator.get_model_config_from_hf")
     def test_hf_unreachable_warning(self, mock_config):
         """HuggingFace API failure should produce a warning."""
         mock_config.side_effect = Exception("Connection refused")
 
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=["nonexistent/model"],
             existing_benchmarks=[],
             gpu_types=["H100"],
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         assert len(results) == 0
@@ -444,12 +461,14 @@ class TestGenerateEstimatedConfigs:
 
     def test_no_models_returns_empty(self):
         """Empty preferred_models should return immediately."""
-        results, warnings = self.finder._generate_estimated_configs(
+        results, warnings = generate_estimated_configs(
             traffic_profile=_make_traffic(),
             slo_targets=_make_slo(),
             preferred_models=[],
             existing_benchmarks=[],
             gpu_types=None,
+            catalog=self.mock_catalog,
+            benchmark_repo=self.mock_repo,
         )
 
         assert results == []
@@ -467,9 +486,9 @@ class TestPlanAllCapacitiesEstimated:
         self.mock_catalog.get_all_models.return_value = []
         self.finder = ConfigFinder(benchmark_repo=self.mock_repo, catalog=self.mock_catalog)
 
-    @patch.object(ConfigFinder, "_generate_estimated_configs")
+    @patch("planner.recommendation.config_finder.generate_estimated_configs")
     def test_calls_estimated_flow_when_enabled(self, mock_gen):
-        """Should call _generate_estimated_configs when enable_estimated=True and preferred_models set."""
+        """Should call generate_estimated_configs when enable_estimated=True and preferred_models set."""
         mock_gen.return_value = ([], [])
 
         self.finder.plan_all_capacities(
@@ -482,9 +501,9 @@ class TestPlanAllCapacitiesEstimated:
 
         mock_gen.assert_called_once()
 
-    @patch.object(ConfigFinder, "_generate_estimated_configs")
+    @patch("planner.recommendation.config_finder.generate_estimated_configs")
     def test_skips_estimated_flow_when_disabled(self, mock_gen):
-        """Should not call _generate_estimated_configs when enable_estimated=False."""
+        """Should not call generate_estimated_configs when enable_estimated=False."""
         mock_gen.return_value = ([], [])
 
         self.finder.plan_all_capacities(
@@ -497,9 +516,9 @@ class TestPlanAllCapacitiesEstimated:
 
         mock_gen.assert_not_called()
 
-    @patch.object(ConfigFinder, "_generate_estimated_configs")
+    @patch("planner.recommendation.config_finder.generate_estimated_configs")
     def test_skips_estimated_flow_without_models(self, mock_gen):
-        """Should not call _generate_estimated_configs when no preferred_models."""
+        """Should not call generate_estimated_configs when no preferred_models."""
         mock_gen.return_value = ([], [])
 
         self.finder.plan_all_capacities(
@@ -511,7 +530,7 @@ class TestPlanAllCapacitiesEstimated:
 
         mock_gen.assert_not_called()
 
-    @patch.object(ConfigFinder, "_generate_estimated_configs")
+    @patch("planner.recommendation.config_finder.generate_estimated_configs")
     def test_benchmark_metrics_include_confidence_level(self, mock_gen):
         """benchmark_metrics dict should include source and confidence_level."""
         # Return a benchmark from the DB query

@@ -27,6 +27,8 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from planner.knowledge_base.loader import insert_benchmarks
+
 logger = logging.getLogger(__name__)
 
 
@@ -173,17 +175,21 @@ class BenchmarkRepository:
         Raises:
             Exception: If the DB write fails.
         """
-        from planner.knowledge_base.loader import insert_benchmarks
+        # Prepare data before opening connection to fail fast and keep
+        # the connection short-lived.
+        benchmark_dicts = [b.to_dict() for b in benchmarks]
+        for d in benchmark_dicts:
+            d.setdefault("prompt_tokens", d.get("mean_input_tokens"))
+            d.setdefault("output_tokens", d.get("mean_output_tokens"))
 
         conn = self._get_connection()
         try:
-            benchmark_dicts = [b.to_dict() for b in benchmarks]
-            for d in benchmark_dicts:
-                d.setdefault("prompt_tokens", d.get("mean_input_tokens"))
-                d.setdefault("output_tokens", d.get("mean_output_tokens"))
             insert_benchmarks(
                 conn, benchmark_dicts, source=source, confidence_level=confidence_level
             )
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
