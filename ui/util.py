@@ -5,7 +5,6 @@ Streamlit frontend utilities
 from dataclasses import dataclass
 
 import streamlit as st
-from transformers import AutoConfig
 
 # Session state variables pertaining to user selected values
 USER_SCENARIO_KEY = "scenario"
@@ -31,10 +30,6 @@ class Scenario:
     """Scenario stores info about an user scenario in Streamlit"""
 
     model_name: str = "Qwen/Qwen2.5-7B-Instruct"
-    model_config: AutoConfig | None = None  # Info about model
-    text_config: AutoConfig | None = (
-        None  # Info about the model like max positional embeddings can be nested inside text_config for certain architectures like MistralConfig
-    )
     max_model_len: int = 1
     concurrency: int = 1
 
@@ -60,23 +55,11 @@ class Scenario:
     def get_gpu_memory(self, gpu_specs_db: dict) -> int:  # type: ignore[type-arg]
         return self.get_gpu_spec(gpu_specs_db)["memory_gb"]  # type: ignore[no-any-return]
 
-    def can_show_mem_util_chart(self, min_gpu_req: int):
-        return bool(
-            self.model_name
-            and self.model_config
-            and self.max_model_len
-            and self.concurrency
-            and self.gpu_name
-            and self.gpu_count_avail
-            and self.gpu_count_avail >= min_gpu_req
-        )
-
     def reset(self) -> None:
         """
         Resets inputs
         """
         self.model_name = "Qwen/Qwen2.5-7B-Instruct"
-        self.model_config = None
         self.max_model_len = 1
         self.concurrency = 1
 
