@@ -113,6 +113,7 @@ def prepare_benchmark_for_insert(
     prepared.setdefault("profiler_type", None)
     prepared.setdefault("profiler_image", None)
     prepared.setdefault("profiler_tag", None)
+    prepared.setdefault("model_uri", None)
     prepared["source"] = source
     prepared["confidence_level"] = confidence_level
 
@@ -136,7 +137,7 @@ _INSERT_QUERY = """
         prompt_tokens, prompt_tokens_stdev, prompt_tokens_min, prompt_tokens_max,
         output_tokens, output_tokens_min, output_tokens_max, output_tokens_stdev,
         profiler_type, profiler_image, profiler_tag,
-        source, confidence_level
+        source, confidence_level, model_uri
     ) VALUES (
         %(id)s, %(config_id)s, %(model_hf_repo)s, %(provider)s, %(type)s,
         %(ttft_mean)s, %(ttft_p90)s, %(ttft_p95)s, %(ttft_p99)s,
@@ -152,7 +153,7 @@ _INSERT_QUERY = """
         %(prompt_tokens)s, %(prompt_tokens_stdev)s, %(prompt_tokens_min)s, %(prompt_tokens_max)s,
         %(output_tokens)s, %(output_tokens_min)s, %(output_tokens_max)s, %(output_tokens_stdev)s,
         %(profiler_type)s, %(profiler_image)s, %(profiler_tag)s,
-        %(source)s, %(confidence_level)s
+        %(source)s, %(confidence_level)s, %(model_uri)s
     )
     ON CONFLICT (config_id) DO NOTHING;
 """
