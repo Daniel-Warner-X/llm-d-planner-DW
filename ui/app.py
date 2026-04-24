@@ -75,7 +75,7 @@ st.markdown(
     .planner-hero-title-row h1 {
         margin: 0;
         padding: 0;
-        font-size: 2.75rem;
+        font-size: 2rem;
         font-weight: 600;
         line-height: 1.15;
         border: none;
