@@ -132,14 +132,33 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
             unsafe_allow_html=True,
         )
 
-        # Prev/Next navigation (circular) - simplified responsive layout
+        # Prev/Next navigation (circular) - compact horizontal layout for all screen sizes
         if len(recs_list) > 1:
             last = len(recs_list) - 1
 
-            # Simple 3-column layout that works on all screen sizes
-            btn_prev, counter, btn_next = st.columns([1, 2, 1])
+            # CSS to prevent columns from stacking on mobile
+            st.markdown(
+                """
+                <style>
+                /* Prevent column stacking on mobile for navigation */
+                @media (max-width: 768px) {
+                    [data-testid="stHorizontalBlock"] {
+                        flex-wrap: nowrap !important;
+                    }
+                    [data-testid="column"] {
+                        min-width: 0 !important;
+                        flex-shrink: 1 !important;
+                    }
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
-            with btn_prev:
+            # Compact button row
+            col1, col2, col3 = st.columns([0.8, 1.4, 0.8])
+
+            with col1:
                 if st.button("◀", key=f"prev_{category_key}", use_container_width=True):
                     st.session_state[idx_key] = last if idx == 0 else idx - 1
                     st.session_state.deployment_selected_config = None
@@ -151,13 +170,13 @@ def _render_category_card(title, recs_list, highlight_field, category_key, col):
                     st.session_state.deployed_to_cluster = False
                     st.rerun()
 
-            with counter:
+            with col2:
                 st.markdown(
-                    f"<div style='text-align: center; line-height: 2.4; font-size: 0.85rem;'>#{idx + 1} of {len(recs_list)}</div>",
+                    f"<div style='text-align: center; line-height: 2.4; font-size: 0.85rem; white-space: nowrap;'>#{idx + 1} of {len(recs_list)}</div>",
                     unsafe_allow_html=True,
                 )
 
-            with btn_next:
+            with col3:
                 if st.button("▶", key=f"next_{category_key}", use_container_width=True):
                     st.session_state[idx_key] = 0 if idx == last else idx + 1
                     st.session_state.deployment_selected_config = None
